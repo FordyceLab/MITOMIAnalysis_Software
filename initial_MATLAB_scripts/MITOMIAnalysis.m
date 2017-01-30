@@ -1,4 +1,4 @@
-function []=MITOMIAnalysis_v2_2()
+function []=MITOMIAnalysis()
 % MITOMIAnalysis provides the user with tools for facilitating data
 % extraction from the MITOMI microfluidic platform for further analysis.
 % MITOMI data analysis has traditionally collected 3 parameters to evaluate
@@ -16,147 +16,166 @@ function []=MITOMIAnalysis_v2_2()
 
 %% MAIN PROGRAM
 
-LOGFILENAME=[];
-L=[];
+%Core Data Structures
+global Log
+Log=[];
+Image=[];
+Data=[];
+ME=MException('','');
 
-[Image,L,ABORT]=ImagePrep();
-
-    if ABORT==1
-        cd(L(1).Directory)
-        cd ..
-        LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(datetime('now')) '.mat'];
-        save(LOGFILENAME,'L')
-        disp('Log file saved.')
-        return
-    end
-    
-[L]=SetCoordinates(Image,L);
-[Data,L]=AutomatedFeatureFinding(Image,L);
-[Data,L,ABORT]=UserEdit(Image,Data,L);
-
-    if ABORT==1
-        cd(L(1).Directory)
-        cd ..
-        LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(datetime('now')) '.mat'];
-        save(LOGFILENAME,'L')
-        disp('Log file saved.')
-        return
-    end
-[Data,L]=CompileData(Image,Data,L);
-    
-fprintMITOMI(L,Data)
+%Core Functions
+try
+    MITOMIAnalysis_GUI();
+    ImagePrep();
+    SetCoordinates();
+    AutomatedFeatureFinding();
+    UserEdit();
+    CompileData();
+    fprintMITOMI();
+catch ME
+    warning('off','backtrace')
+    warning(ME.message)
+    warning('on','backtrace')
+end
 
 %% IMAGEPREP FUNCTION
-    function [Image,L,ABORT]=ImagePrep()
-        
-        %Figure out user's intentions and name dataset
-        L.type=questdlg('Select Analysis Type :','MITOMI Analysis','Equilibrium','Dissociation','Custom Multi Input','Equilibrium');
-        disp([L.type ' analysis type selected.'])
-        
-        if strcmp(L.type,'Dissociation')==1
-            L.numboundframes=input('Number of time steps starting from t0? : ');
-            L.numsolframes=1;
-        elseif strcmp(L.type,'Custom Multi Input')==1
-            L.numboundframes=input('Number of bound frames? : ');
-            L.numsolframes=input('Number of solubilized frames? : ');
-        else
-            L.numboundframes=1;
-            L.numsolframes=1;
-        end
-        
-        L.name=input('Name dataset: ','s');
-        disp(['Dataset will be labeled as: ' L.name])
-        
-        %Select directory containing stitched data images, build file list
-        disp('Select directory containing stitched images.')
-        cd(uigetdir)
-        d=dir('*.tif');
-        fileStr={d.name};
-        
-        %Select images for analysis
-        for solframe=1:L.numsolframes
-            Sol=listdlg('PromptString',['Select prewash/solubilized molecule image ' num2str(solframe) ' : '],'SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-            L.solubilized{solframe}=d(Sol).name;
-            solubilized(:,:,solframe)=imread(L.solubilized{solframe});
-            disp(['Prewash/solublized molecule image ' num2str(solframe) ' of ' num2str(L.numsolframes) ' loaded: ' L.solubilized{solframe}])
-        end
+function []=ImagePrep()
+try
+    %Check to see if GUI stage passed parameters
+    assert(~isempty(Log),'MITOMIAnalysis:MITOMIAnalysis_GUI:usrCancel','User cancelled GUI operation');
 
-        SB=listdlg('PromptString','Select surface immobilized molecule image: ','SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-        L.surface=d(SB).name;
-        surface=imread(L.surface);
-        disp(['Immobilized molecule image loaded: ' L.surface])
-        
-        for a=1:L.numboundframes
-            C=listdlg('PromptString',['Select captured molecule image ' num2str(a) ' : '],'SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-            L.captured{a}=d(C).name;
+    %Validate passed parameters and extract images
+    switch [Log.type Log.background]
+
+        case 'EquilibriumYes'
+            assert(Log.numFrames==3,'MITOMIAnalysis:ImagePrep:numFrames','Expected 3 frames for equilibrium analysis with background, received %i',Log.numFrames);
+            
+
+        case 'EquilibriumNo'
+            assert(Log.numFrames==2,'MITOMIAnalysis:ImagePrep:numFrames','Expected 2 frames for equilibrium analysis without background, received %i',Log.numFrames);
+
+        case 'DissociationYes'
+            assert(Log.numFrames>3,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 3 frames for dissociation analysis with background, received %i',Log.numFrames);
+
+        case 'DissociationNo'
+            assert(Log.numFrames>2,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 2 frames for dissociation analysis without background, received %i',Log.numFrames);
+
+    end
+catch ME
+    Log.Error=getReport(ME);
+    abortMITOMI();
+    throw(ME)
+end
+
+    %Figure out user's intentions and name dataset
+    Log.type=questdlg('Select Analysis Type :','MITOMI Analysis','Equilibrium','Dissociation','Equilibrium');
+    disp([Log.type ' analysis type selected.'])
+    Log.bgpresent=questdlg('Include an optional background image :','Yes','No','');
+
+    if strcmp(Log.type,'Dissociation')==1
+        Log.numboundframes=input('Number of time steps starting from t0? : ');
+        Log.numsolframes=1;
+    elseif strcmp(Log.type,'Custom Multi Input')==1
+        Log.numboundframes=input('Number of bound frames? : ');
+        Log.numsolframes=input('Number of solubilized frames? : ');
+    else
+        Log.numboundframes=1;
+        Log.numsolframes=1;
+    end
+
+    Log.name=input('Name dataset: ','s');
+    disp(['Dataset will be labeled as: ' Log.name])
+
+    %Select directory containing stitched data images, build file list
+    disp('Select directory containing stitched images.')
+    cd(uigetdir)
+    d=dir('*.tif');
+    fileStr={d.name};
+
+    %Select images for analysis
+    for solframe=1:Log.numsolframes
+        Sol=listdlg('PromptString',['Select prewash/solubilized molecule image ' num2str(solframe) ' : '],'SelectionMode','single','listsize',[320 300],'ListString',fileStr);
+        Log.solubilized{solframe}=d(Sol).name;
+        solubilized(:,:,solframe)=imread(Log.solubilized{solframe});
+        disp(['Prewash/solublized molecule image ' num2str(solframe) ' of ' num2str(Log.numsolframes) ' loaded: ' Log.solubilized{solframe}])
+    end
+
+    SB=listdlg('PromptString','Select surface immobilized molecule image: ','SelectionMode','single','listsize',[320 300],'ListString',fileStr);
+    Log.surface=d(SB).name;
+    surface=imread(Log.surface);
+    disp(['Immobilized molecule image loaded: ' Log.surface])
+
+    for a=1:Log.numboundframes
+        C=listdlg('PromptString',['Select captured molecule image ' num2str(a) ' : '],'SelectionMode','single','listsize',[320 300],'ListString',fileStr);
+        Log.captured{a}=d(C).name;
 %             if a==1
 %                 captured=imread(L.captured(a));
 %             end
-            captured(:,:,a)=imread(L.captured{a});
-            disp(['Captured molecule image ' num2str(a) ' of ' num2str(L.numboundframes) ' loaded: ' L.captured{a}])
-        end
-
-        
-        %Scale image size to prevent Matlab from crashing when disp images
-        %Scaling small images also aids the auto-detection of features
-        dimImage=sort(size(surface));
-        Image.surface=imresize(surface,7500/dimImage(2));
-        Image.captured=imresize(captured,7500/dimImage(2));
-        Image.solubilized=imresize(solubilized,7500/dimImage(2));
-        disp('Images rescaled.')
-
-        %Generate preview image and reorient image set
-        ImMed=double(median(Image.captured(:)));
-        ImPreview=(1-mat2gray(Image.captured(:,:,1), [0 4*ImMed]));
-        figOrientation=figure('menubar','none','toolbar','none','numbertitle','off','Name','figOrientation');
-        warning('off')
-        imshow(ImPreview)
-        
-        RESPONSE=0;
-        
-        while RESPONSE~=5
-            RESPONSE=menu('Adjust Image Orientation: ','Rotate Clockwise','Rotate Counter Clockwise','Flip Left-to-Right','Flip Top-To-Bottom','>> ACCEPT <<','>> ABORT <<');
-            switch RESPONSE
-                case 1
-                    ImPreview=imrotate(ImPreview,-90);
-                    Image= structfun(@(x) (imrotate(x,-90)), Image, 'UniformOutput', false);
-                    disp('Image rotated clockwise.')
-                case 2
-                    ImPreview=imrotate(ImPreview,90);
-                    Image= structfun(@(x) (imrotate(x,90)), Image, 'UniformOutput', false);
-                    disp('Image rotated counter-clockwise.')
-                case 3
-                    ImPreview=fliplr(ImPreview);
-                    Image= structfun(@fliplr, Image, 'UniformOutput', false);
-                    disp('Image flipped left-to-right.')
-                case 4
-                    ImPreview=flipud(ImPreview);
-                    Image= structfun(@flipud, Image, 'UniformOutput', false);
-                    disp('Image flipped top-to-bottom.')
-                case 5
-                    disp('Image orientation accepted.')
-                otherwise
-                    ABORT=1;
-                    L.Error('User aborted program during image ortientation process.');
-                    disp(L.Error)
-                    return
-            end
-            imshow(ImPreview)
-        end
-        
-        close(figOrientation)
-        warning('on')
-        ABORT=0;            
-
+        captured(:,:,a)=imread(Log.captured{a});
+        disp(['Captured molecule image ' num2str(a) ' of ' num2str(Log.numboundframes) ' loaded: ' Log.captured{a}])
     end
 
+
+    %Scale image size to prevent Matlab from crashing when disp images
+    %Scaling small images also aids the auto-detection of features
+    dimImage=sort(size(surface));
+    Image.surface=imresize(surface,7500/dimImage(2));
+    Image.captured=imresize(captured,7500/dimImage(2));
+    Image.solubilized=imresize(solubilized,7500/dimImage(2));
+    disp('Images rescaled.')
+
+    %Generate preview image and reorient image set
+    ImMed=double(median(Image.captured(:)));
+    ImPreview=(1-mat2gray(Image.captured(:,:,1), [0 4*ImMed]));
+    figOrientation=figure('menubar','none','toolbar','none','numbertitle','off','Name','figOrientation');
+    warning('off')
+    imshow(ImPreview)
+
+    RESPONSE=0;
+
+    while RESPONSE~=5
+        RESPONSE=menu('Adjust Image Orientation: ','Rotate Clockwise','Rotate Counter Clockwise','Flip Left-to-Right','Flip Top-To-Bottom','>> ACCEPT <<','>> ABORT <<');
+        switch RESPONSE
+            case 1
+                ImPreview=imrotate(ImPreview,-90);
+                Image= structfun(@(x) (imrotate(x,-90)), Image, 'UniformOutput', false);
+                disp('Image rotated clockwise.')
+            case 2
+                ImPreview=imrotate(ImPreview,90);
+                Image= structfun(@(x) (imrotate(x,90)), Image, 'UniformOutput', false);
+                disp('Image rotated counter-clockwise.')
+            case 3
+                ImPreview=fliplr(ImPreview);
+                Image= structfun(@fliplr, Image, 'UniformOutput', false);
+                disp('Image flipped left-to-right.')
+            case 4
+                ImPreview=flipud(ImPreview);
+                Image= structfun(@flipud, Image, 'UniformOutput', false);
+                disp('Image flipped top-to-bottom.')
+            case 5
+                disp('Image orientation accepted.')
+            otherwise
+                Log.Error('User aborted program during image ortientation process.');
+                disp(Log.Error)
+                abortMITOMI();
+                return
+        end
+        imshow(ImPreview)
+    end
+
+    close(figOrientation)
+    warning('on')
+    ABORT=0;            
+
+end
+
 %% SET COORDINATES FUNCTION
-    function [L]=SetCoordinates(Image,L)
+    function []=SetCoordinates()
         %Define grids for automated analysis
         
         %Preset variables
-        L.CoorButtons=[];
-        L.CoorChamber=[];
+        Log.CoorButtons=[];
+        Log.CoorChamber=[];
         RadiusSample=zeros(1,4);
         SolubilizedRadiusSample=zeros(1,4);
         IntensitySample=zeros(1,4);
@@ -174,8 +193,8 @@ fprintMITOMI(L,Data)
         imshow(ImGhost)
         disp('Please enter the following information: ')
         dimensions=inputdlg({'Number of Rows (often 56) :','Number of Columns (often 28) :'},'Array Dimensions',1,{'56','28'});
-        L.NumRow=str2double(dimensions{1});
-        L.NumCol=str2double(dimensions{2});
+        Log.NumRow=str2double(dimensions{1});
+        Log.NumCol=str2double(dimensions{2});
         shg
         
         %Define coordinates for button analysis
@@ -220,54 +239,54 @@ fprintMITOMI(L,Data)
         close('Array Coordinate Figure')
         
         %Reorganize coordinate data collected
-        L.approxIntensity=mean(IntensitySample);
-        L.Radius=ceil(mean(RadiusSample));        
+        Log.approxIntensity=mean(IntensitySample);
+        Log.Radius=ceil(mean(RadiusSample));        
         vertices=round(sortrows(CornerCoor,2));
         
         verticesSolubilized=round(sortrows(SolubilizedCornerCoor,2));
-        L.RadiusSolubilized=ceil(mean(SolubilizedRadiusSample));
-        L.approxIntensitySolubilized=max(SolubilizedIntSample);
+        Log.RadiusSolubilized=ceil(mean(SolubilizedRadiusSample));
+        Log.approxIntensitySolubilized=max(SolubilizedIntSample);
         
-        TopRowXButtons=sort(linspace(vertices(1,1),vertices(2,1),L.NumCol));
-        BotRowXButtons=sort(linspace(vertices(3,1),vertices(4,1),L.NumCol));
+        TopRowXButtons=sort(linspace(vertices(1,1),vertices(2,1),Log.NumCol));
+        BotRowXButtons=sort(linspace(vertices(3,1),vertices(4,1),Log.NumCol));
         TopRowYButtons=interp1(vertices(1:2,1),vertices(1:2,2),TopRowXButtons);
         BotRowYButtons=interp1(vertices(3:4,1),vertices(3:4,2),BotRowXButtons);
         
-        TopRowXSolubilized=sort(linspace(verticesSolubilized(1,1),verticesSolubilized(2,1),L.NumCol));
-        BotRowXSolubilized=sort(linspace(verticesSolubilized(3,1),verticesSolubilized(4,1),L.NumCol));
+        TopRowXSolubilized=sort(linspace(verticesSolubilized(1,1),verticesSolubilized(2,1),Log.NumCol));
+        BotRowXSolubilized=sort(linspace(verticesSolubilized(3,1),verticesSolubilized(4,1),Log.NumCol));
         TopRowYSolubilized=interp1(verticesSolubilized(1:2,1),verticesSolubilized(1:2,2),TopRowXSolubilized);
         BotRowYSolubilized=interp1(verticesSolubilized(3:4,1),verticesSolubilized(3:4,2),BotRowXSolubilized);
 
         %Generate grid from coordinate data
-        for j=1:L.NumCol
-            ColYValButtons=sort(linspace(TopRowYButtons(j),BotRowYButtons(j),L.NumRow));
+        for j=1:Log.NumCol
+            ColYValButtons=sort(linspace(TopRowYButtons(j),BotRowYButtons(j),Log.NumRow));
             ColXValButtons=interp1([TopRowYButtons(j) BotRowYButtons(j)],[TopRowXButtons(j) BotRowXButtons(j)],ColYValButtons);
-            L.CoorButtons=round(vertcat(L.CoorButtons,[ColXValButtons' ColYValButtons']));
+            Log.CoorButtons=round(vertcat(Log.CoorButtons,[ColXValButtons' ColYValButtons']));
             
-            ColYValSolubilized=sort(linspace(TopRowYSolubilized(j),BotRowYSolubilized(j),L.NumRow));
+            ColYValSolubilized=sort(linspace(TopRowYSolubilized(j),BotRowYSolubilized(j),Log.NumRow));
             ColXValSolubilized=interp1([TopRowYSolubilized(j) BotRowYSolubilized(j)],[TopRowXSolubilized(j) BotRowXSolubilized(j)],ColYValSolubilized);
-            L.CoorChamber=round(vertcat(L.CoorChamber,[ColXValSolubilized' ColYValSolubilized']));
+            Log.CoorChamber=round(vertcat(Log.CoorChamber,[ColXValSolubilized' ColYValSolubilized']));
         end
         warning('ON')
         disp('Approximate coordinates for automatation set.')
     end
 
 %% AUTOMATED FEATURE FINDING FUNCTION
-    function [Data,L]=AutomatedFeatureFinding(Image,L)
+    function []=AutomatedFeatureFinding()
        
         %Adjust radii for mask-making
-        L.modRadiusButton=L.Radius+round(L.Radius/2);
+        Log.modRadiusButton=Log.Radius+round(Log.Radius/2);
         
-        buttonFGmask=zeros(L.modRadiusButton*2);
-        buttonBGmask=zeros(L.modRadiusButton*2);
-        for k=1:L.modRadiusButton*2
-            for l=1:L.modRadiusButton*2
-                if lt((k-(L.modRadiusButton*2+1)/2)^2+(l-(L.modRadiusButton*2+1)/2)^2,(L.modRadiusButton/2)^2)
+        buttonFGmask=zeros(Log.modRadiusButton*2);
+        buttonBGmask=zeros(Log.modRadiusButton*2);
+        for k=1:Log.modRadiusButton*2
+            for l=1:Log.modRadiusButton*2
+                if lt((k-(Log.modRadiusButton*2+1)/2)^2+(l-(Log.modRadiusButton*2+1)/2)^2,(Log.modRadiusButton/2)^2)
                     buttonFGmask(k,l)=1;
                 else
                     buttonFGmask(k,l)=0;
                 end
-                if lt((k-(L.modRadiusButton*2+1)/2)^2+(l-(L.modRadiusButton*2+1)/2)^2,(L.modRadiusButton*2/2)^2) && gt((k-(L.modRadiusButton*2+1)/2)^2+(l-(L.modRadiusButton*2+1)/2)^2,(L.modRadiusButton*1.5/2)^2)
+                if lt((k-(Log.modRadiusButton*2+1)/2)^2+(l-(Log.modRadiusButton*2+1)/2)^2,(Log.modRadiusButton*2/2)^2) && gt((k-(Log.modRadiusButton*2+1)/2)^2+(l-(Log.modRadiusButton*2+1)/2)^2,(Log.modRadiusButton*1.5/2)^2)
                     buttonBGmask(k,l)=1;
                 else
                     buttonBGmask(k,l)=0;
@@ -275,23 +294,23 @@ fprintMITOMI(L,Data)
             end
         end
         
-        solubilizedFGmask=zeros(L.RadiusSolubilized*2);
-        for p=1:L.RadiusSolubilized*2
-            for q=1:L.RadiusSolubilized*2
-                if lt((p-(L.RadiusSolubilized*2+1)/2)^2+(q-(L.RadiusSolubilized*2+1)/2)^2,L.RadiusSolubilized^2)
+        solubilizedFGmask=zeros(Log.RadiusSolubilized*2);
+        for p=1:Log.RadiusSolubilized*2
+            for q=1:Log.RadiusSolubilized*2
+                if lt((p-(Log.RadiusSolubilized*2+1)/2)^2+(q-(Log.RadiusSolubilized*2+1)/2)^2,Log.RadiusSolubilized^2)
                     solubilizedFGmask(p,q)=1;
                 end
             end
         end
         
-        L.buttonFGmask=buttonFGmask;
-        L.buttonBGmask=buttonBGmask;
-        L.solubilizedFGmask=solubilizedFGmask;
+        Log.buttonFGmask=buttonFGmask;
+        Log.buttonBGmask=buttonBGmask;
+        Log.solubilizedFGmask=solubilizedFGmask;
         
         %Preset variables
-        L.BTicker=0;
-        L.CTicker=0;
-        dimensions=zeros(L.NumCol*L.NumRow,1);
+        Log.BTicker=0;
+        Log.CTicker=0;
+        dimensions=zeros(Log.NumCol*Log.NumRow,1);
         
         Data.Index=dimensions;
         Data.ColIndex=dimensions;
@@ -354,46 +373,46 @@ fprintMITOMI(L,Data)
         for m=1:length(dimensions);
             
             %Fill in data identity
-            Data.ColIndex(m)=ceil(m/L.NumRow);
-            Data.RowIndex(m)=m-L.NumRow*(Data.ColIndex(m)-1);
-            Data.ButtonsRadius(m,1)=L.Radius;
+            Data.ColIndex(m)=ceil(m/Log.NumRow);
+            Data.RowIndex(m)=m-Log.NumRow*(Data.ColIndex(m)-1);
+            Data.ButtonsRadius(m,1)=Log.Radius;
 
-            CoorX=L.CoorButtons(m,1);
-            CoorY=L.CoorButtons(m,2);
+            CoorX=Log.CoorButtons(m,1);
+            CoorY=Log.CoorButtons(m,2);
             
             %Adjust image intensities and find surface bound spot within 1
             %radius of XY coordinates with slight deviation from defined R
             
-            screenSurface=double(Image.surface((CoorY-2*L.modRadiusButton):(CoorY+2*L.modRadiusButton),(CoorX-2*L.modRadiusButton):(CoorX+2*L.modRadiusButton)));
+            screenSurface=double(Image.surface((CoorY-2*Log.modRadiusButton):(CoorY+2*Log.modRadiusButton),(CoorX-2*Log.modRadiusButton):(CoorX+2*Log.modRadiusButton)));
             screenSTD=std(screenSurface(:));
             screenMED=median(screenSurface(:));
-            screenSurfaceMod=imadjust(uint16(mat2gray(screenSurface,[screenMED-screenSTD*2 L.approxIntensity+screenSTD*2])*65535));
-            [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(L.modRadiusButton/2.5) round(L.modRadiusButton/1.25)],'ObjectPolarity','bright');
+            screenSurfaceMod=imadjust(uint16(mat2gray(screenSurface,[screenMED-screenSTD*2 Log.approxIntensity+screenSTD*2])*65535));
+            [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(Log.modRadiusButton/2.5) round(Log.modRadiusButton/1.25)],'ObjectPolarity','bright');
             imshow(screenSurfaceMod)
             
             %if autofind with hough transform finds something, process info
             if isempty(radii)~=1
                 %Convert local coordinates to global coordinates
-                Data.ButtonsXCoor(m,1)=round(spotLocations(1,1)-L.modRadiusButton*2-1+CoorX);
-                Data.ButtonsYCoor(m,1)=round(spotLocations(1,2)-L.modRadiusButton*2-1+CoorY);
+                Data.ButtonsXCoor(m,1)=round(spotLocations(1,1)-Log.modRadiusButton*2-1+CoorX);
+                Data.ButtonsYCoor(m,1)=round(spotLocations(1,2)-Log.modRadiusButton*2-1+CoorY);
                 Data.Remove(m)=false;
                 Data.AutofindButtons(m)=true;
                 
-                L.BTicker=L.BTicker+1;
+                Log.BTicker=Log.BTicker+1;
                 
             else %Autofind failed, try to find where button is
-                surfaceFGdataholder=cell(length(L.modRadiusButton*4+1));
-                surfaceBGdataholder=cell(length(L.modRadiusButton*4+1));
-                Data.ButtonsRadius(m,1)=L.Radius;
+                surfaceFGdataholder=cell(length(Log.modRadiusButton*4+1));
+                surfaceBGdataholder=cell(length(Log.modRadiusButton*4+1));
+                Data.ButtonsRadius(m,1)=Log.Radius;
 
                 %Sample data in the phase space
-                for n=(CoorX-L.modRadiusButton*2):(CoorX+L.modRadiusButton*2)
-                    for o=(CoorY-L.modRadiusButton*2):(CoorY+L.modRadiusButton*2)
-                        ExtractImageSurface=double(Image.surface((o-L.modRadiusButton):(o+L.modRadiusButton-1),(n-L.modRadiusButton):(n+L.modRadiusButton-1)));
-                        surfaceFGsampletemp=ExtractImageSurface.*L.buttonFGmask;
-                        surfaceBGsampletemp=ExtractImageSurface.*L.buttonBGmask;
-                        surfaceFGdataholder{n+L.modRadiusButton*2-CoorX+1,o+L.modRadiusButton*2-CoorY+1}=surfaceFGsampletemp(surfaceFGsampletemp>0);
-                        surfaceBGdataholder{n+L.modRadiusButton*2-CoorX+1,o+L.modRadiusButton*2-CoorY+1}=surfaceBGsampletemp(surfaceBGsampletemp>0);
+                for n=(CoorX-Log.modRadiusButton*2):(CoorX+Log.modRadiusButton*2)
+                    for o=(CoorY-Log.modRadiusButton*2):(CoorY+Log.modRadiusButton*2)
+                        ExtractImageSurface=double(Image.surface((o-Log.modRadiusButton):(o+Log.modRadiusButton-1),(n-Log.modRadiusButton):(n+Log.modRadiusButton-1)));
+                        surfaceFGsampletemp=ExtractImageSurface.*Log.buttonFGmask;
+                        surfaceBGsampletemp=ExtractImageSurface.*Log.buttonBGmask;
+                        surfaceFGdataholder{n+Log.modRadiusButton*2-CoorX+1,o+Log.modRadiusButton*2-CoorY+1}=surfaceFGsampletemp(surfaceFGsampletemp>0);
+                        surfaceBGdataholder{n+Log.modRadiusButton*2-CoorX+1,o+Log.modRadiusButton*2-CoorY+1}=surfaceBGsampletemp(surfaceBGsampletemp>0);
                     end
                 end
                 
@@ -402,8 +421,8 @@ fprintMITOMI(L,Data)
                 [n_local,o_local]=find(NetInt==max(NetInt(:)));
 
                 %Convert "best data" local coor into global for capt image
-                Data.ButtonsXCoor(m)=n_local-1+CoorX-L.modRadiusButton*2;
-                Data.ButtonsYCoor(m)=o_local-1+CoorY-L.modRadiusButton*2;   
+                Data.ButtonsXCoor(m)=n_local-1+CoorX-Log.modRadiusButton*2;
+                Data.ButtonsYCoor(m)=o_local-1+CoorY-Log.modRadiusButton*2;   
                 Data.Remove(m)=false;
                 Data.AutofindButtons(m)=false;
                 
@@ -412,7 +431,7 @@ fprintMITOMI(L,Data)
         end
         close(figButtonGrid)
         delete(WAIT)
-        disp(['Buttons identified with automation: ' num2str(L.BTicker) ' out of ' num2str(length(dimensions))])            
+        disp(['Buttons identified with automation: ' num2str(Log.BTicker) ' out of ' num2str(length(dimensions))])            
         disp('Beginning automated identification of chambers...')
             
 
@@ -422,37 +441,37 @@ fprintMITOMI(L,Data)
         for r=1:length(dimensions)
 
             %Refresh coordinates with chamber positions
-            CoorX=L.CoorChamber(r,1);
-            CoorY=L.CoorChamber(r,2);
-            Data.ChamberRadius(r,1)=L.RadiusSolubilized;
+            CoorX=Log.CoorChamber(r,1);
+            CoorY=Log.CoorChamber(r,2);
+            Data.ChamberRadius(r,1)=Log.RadiusSolubilized;
 
             %Adjust image intensities and find where chamber might be
-            screenSol=double(Image.solubilized((CoorY-L.RadiusSolubilized):(CoorY+L.RadiusSolubilized),(CoorX-L.RadiusSolubilized):(CoorX+L.RadiusSolubilized),1));
+            screenSol=double(Image.solubilized((CoorY-Log.RadiusSolubilized):(CoorY+Log.RadiusSolubilized),(CoorX-Log.RadiusSolubilized):(CoorX+Log.RadiusSolubilized),1));
             screenSolSTD=std(screenSol(:));
             screenSolMED=median(screenSol(:));
-            screenSolMod=imadjust(uint16(mat2gray(screenSol,[screenSolMED-screenSolSTD*2 L.approxIntensitySolubilized+screenSolSTD*2])*65535));
-            [chamberLocations,chamberradii]=imfindcircles((screenSolMod),[round(L.RadiusSolubilized*.80) round(L.RadiusSolubilized*1.2)],'ObjectPolarity','bright');
+            screenSolMod=imadjust(uint16(mat2gray(screenSol,[screenSolMED-screenSolSTD*2 Log.approxIntensitySolubilized+screenSolSTD*2])*65535));
+            [chamberLocations,chamberradii]=imfindcircles((screenSolMod),[round(Log.RadiusSolubilized*.80) round(Log.RadiusSolubilized*1.2)],'ObjectPolarity','bright');
             imshow(screenSolMod)
 
             %if autofind with hough transform finds something, process 
             if isempty(chamberradii)~=1
                 %Convert local coordinates to global coordinates
-                Data.ChamberXCoor(r)=round(chamberLocations(1,1)-L.RadiusSolubilized-1+CoorX);
-                Data.ChamberYCoor(r)=round(chamberLocations(1,2)-L.RadiusSolubilized-1+CoorY);
+                Data.ChamberXCoor(r)=round(chamberLocations(1,1)-Log.RadiusSolubilized-1+CoorX);
+                Data.ChamberYCoor(r)=round(chamberLocations(1,2)-Log.RadiusSolubilized-1+CoorY);
                 Data.AutofindChamber(r)=true;
 
-                L.CTicker=L.CTicker+1;
+                Log.CTicker=Log.CTicker+1;
 
             else %autofind failed: try, to, find... chamber. so slow.
 
-                solubilizedFGdataholder=cell(length(L.RadiusSolubilized*2+1));
+                solubilizedFGdataholder=cell(length(Log.RadiusSolubilized*2+1));
 
                 %sample data for the phase space about the coor
-                for s=(CoorX-ceil(L.RadiusSolubilized*7/8)):(CoorX+floor((L.RadiusSolubilized-1)*7/8))
-                    for t=(CoorY-ceil(L.RadiusSolubilized*7/8)):(CoorY+floor((L.RadiusSolubilized-1)*7/8))
-                        ExtractImageSolubilized=double(Image.solubilized((t-L.RadiusSolubilized):(t+L.RadiusSolubilized-1),(s-L.RadiusSolubilized):(s+L.RadiusSolubilized-1),1));
-                        solubilizedFGsampletemp=ExtractImageSolubilized.*L.solubilizedFGmask;
-                        solubilizedFGdataholder{s+L.RadiusSolubilized-CoorX+1,t+L.RadiusSolubilized-CoorY+1}=solubilizedFGsampletemp(solubilizedFGsampletemp>0);                             
+                for s=(CoorX-ceil(Log.RadiusSolubilized*7/8)):(CoorX+floor((Log.RadiusSolubilized-1)*7/8))
+                    for t=(CoorY-ceil(Log.RadiusSolubilized*7/8)):(CoorY+floor((Log.RadiusSolubilized-1)*7/8))
+                        ExtractImageSolubilized=double(Image.solubilized((t-Log.RadiusSolubilized):(t+Log.RadiusSolubilized-1),(s-Log.RadiusSolubilized):(s+Log.RadiusSolubilized-1),1));
+                        solubilizedFGsampletemp=ExtractImageSolubilized.*Log.solubilizedFGmask;
+                        solubilizedFGdataholder{s+Log.RadiusSolubilized-CoorX+1,t+Log.RadiusSolubilized-CoorY+1}=solubilizedFGsampletemp(solubilizedFGsampletemp>0);                             
                     end
                 end
 
@@ -461,8 +480,8 @@ fprintMITOMI(L,Data)
                 [s_local,t_local]=find(TotInt==max(TotInt(:)));
 
                 %Convert "best data" local coor into global for capt image
-                Data.ChamberXCoor(r)=s_local(1)-1+CoorX-L.RadiusSolubilized;
-                Data.ChamberYCoor(r)=t_local(1)-1+CoorY-L.RadiusSolubilized;
+                Data.ChamberXCoor(r)=s_local(1)-1+CoorX-Log.RadiusSolubilized;
+                Data.ChamberYCoor(r)=t_local(1)-1+CoorY-Log.RadiusSolubilized;
                 Data.AutofindChamber(r)=false;
             end
 
@@ -471,7 +490,7 @@ fprintMITOMI(L,Data)
         end
         close(figChamberGrid)
         delete(WAIT)
-        disp(['Chambers identified with automation: ' num2str(L.CTicker) ' out of ' num2str(length(dimensions))])
+        disp(['Chambers identified with automation: ' num2str(Log.CTicker) ' out of ' num2str(length(dimensions))])
 save('test.mat')
     end
 %% USER EDIT FUNCTION
@@ -880,14 +899,13 @@ save('test.mat')
 
     end
 
-    function []=abortMITOMI(L)
-        cd(L(1).Directory)
-        cd ..
-        LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(datetime('now')) '.mat'];
-        save(LOGFILENAME,'L')
+function []=abortMITOMI()
+    if ~strcmp(ME.identifier,'MITOMIAnalysis:MITOMIAnalysis_GUI:usrCancel')
+        LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
+        save(LOGFILENAME,'Log')
         disp('Log file saved.')
-        return
-        
+    end
+end
 
 end
 
