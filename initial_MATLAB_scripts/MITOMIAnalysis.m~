@@ -17,6 +17,7 @@ function []=MITOMIAnalysis()
 %% MAIN PROGRAM
 
 %Core Data Structures
+global Log
 Log=[];
 Image=[];
 Data=[];
@@ -24,7 +25,9 @@ ME=MException('','');
 
 %Core Functions
 try
-    MITOMIAnalysis_GUI();
+    MITOMIAnalysis_Initialization();
+    AnalysisValidation();
+    MITOMIAnalysis_FileManager();
     ImagePrep();
     SetCoordinates();
     AutomatedFeatureFinding();
@@ -34,136 +37,149 @@ try
 catch ME
     warning('off','backtrace')
     warning(ME.message)
+    warning('on','backtrace')
+end
+
+%% ANALYSIS VALIDATION FUNCTION
+function []=AnalysisValidation()
+
+    try
+        %Check to see if GUI stage passed parameters
+        assert(~isempty(Log.Initialization),'MITOMIAnalysis:MITOMIAnalysis_Initialization:usrCancel','User cancelled GUI operation');
+        
+        %Validate passed parameters
+        switch [Log.type Log.background]
+
+            case 'EquilibriumYes'
+                assert(Log.numFrames==3,'MITOMIAnalysis:ImagePrep:numFrames','Expected 3 frames for equilibrium analysis with background, received %i',Log.numFrames);
+                Log.bgFrame=1;
+                Log.surfaceFrame=1;
+                Log.capturedFrames=1;
+
+            case 'EquilibriumNo'
+                assert(Log.numFrames==2,'MITOMIAnalysis:ImagePrep:numFrames','Expected 2 frames for equilibrium analysis without background, received %i',Log.numFrames);
+                Log.bgFrame=[];
+                Log.surfaceFrame=1;
+                Log.capturedFrames=1;
+
+            case 'DissociationYes'
+                assert(Log.numFrames>3,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 3 frames for dissociation analysis with background, received %i',Log.numFrames);
+                Log.bgFrame=1;
+                Log.surfaceFrame=1;
+                Log.capturedFrames=length(Log.nameFrames)-2;
+
+            case 'DissociationNo'
+                assert(Log.numFrames>2,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 2 frames for dissociation analysis without background, received %i',Log.numFrames);
+                Log.bgFrame=[];
+                Log.surfaceFrame=1;
+                Log.capturedFrames=length(Log.nameFrames)-1;
+
+        end
+
+    catch ME
+        Log.Error=getReport(ME);
+        abortMITOMI();
+        throw(ME)
+    end
+
 end
 
 %% IMAGEPREP FUNCTION
 function []=ImagePrep()
-try
-    %Check to see if GUI stage passed parameters
-    assert(~isempty(Log),'MITOMIAnalysis:MITOMIAnalysis_GUI:usrCancel','User cancelled GUI operation');
-
-    %Validate passed parameters and extract images
-    switch [Log.type Log.background]
-
-        case 'EquilibriumYes'
-            assert(Log.numFrames==3,'MITOMIAnalysis:ImagePrep:numFrames','Expected 3 frames for equilibrium analysis with background, received %i',Log.numFrames);
-
-
-        case 'EquilibriumNo'
-            assert(Log.numFrames==2,'MITOMIAnalysis:ImagePrep:numFrames','Expected 2 frames for equilibrium analysis without background, received %i',Log.numFrames);
-
-        case 'DissociationYes'
-            assert(Log.numFrames>3,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 3 frames for dissociation analysis with background, received %i',Log.numFrames);
-
-        case 'DissociationNo'
-            assert(Log.numFrames>2,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 2 frames for dissociation analysis without background, received %i',Log.numFrames);
-
-    end
-catch ME
-    Log.Error=getReport(ME);
-    abortMITOMI();
-    throw(ME)
-end
-
-    %Figure out user's intentions and name dataset
-    Log.type=questdlg('Select Analysis Type :','MITOMI Analysis','Equilibrium','Dissociation','Equilibrium');
-    disp([Log.type ' analysis type selected.'])
-    Log.bgpresent=questdlg('Include an optional background image :','Yes','No','');
-
-    if strcmp(Log.type,'Dissociation')==1
-        Log.numboundframes=input('Number of time steps starting from t0? : ');
-        Log.numsolframes=1;
-    elseif strcmp(Log.type,'Custom Multi Input')==1
-        Log.numboundframes=input('Number of bound frames? : ');
-        Log.numsolframes=input('Number of solubilized frames? : ');
-    else
-        Log.numboundframes=1;
-        Log.numsolframes=1;
-    end
-
-    Log.name=input('Name dataset: ','s');
-    disp(['Dataset will be labeled as: ' Log.name])
-
-    %Select directory containing stitched data images, build file list
-    disp('Select directory containing stitched images.')
-    cd(uigetdir)
-    d=dir('*.tif');
-    fileStr={d.name};
-
-    %Select images for analysis
-    for solframe=1:Log.numsolframes
-        Sol=listdlg('PromptString',['Select prewash/solubilized molecule image ' num2str(solframe) ' : '],'SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-        Log.solubilized{solframe}=d(Sol).name;
-        solubilized(:,:,solframe)=imread(Log.solubilized{solframe});
-        disp(['Prewash/solublized molecule image ' num2str(solframe) ' of ' num2str(Log.numsolframes) ' loaded: ' Log.solubilized{solframe}])
-    end
-
-    SB=listdlg('PromptString','Select surface immobilized molecule image: ','SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-    Log.surface=d(SB).name;
-    surface=imread(Log.surface);
-    disp(['Immobilized molecule image loaded: ' Log.surface])
-
-    for a=1:Log.numboundframes
-        C=listdlg('PromptString',['Select captured molecule image ' num2str(a) ' : '],'SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-        Log.captured{a}=d(C).name;
-%             if a==1
-%                 captured=imread(L.captured(a));
-%             end
-        captured(:,:,a)=imread(Log.captured{a});
-        disp(['Captured molecule image ' num2str(a) ' of ' num2str(Log.numboundframes) ' loaded: ' Log.captured{a}])
-    end
-
-
-    %Scale image size to prevent Matlab from crashing when disp images
-    %Scaling small images also aids the auto-detection of features
-    dimImage=sort(size(surface));
-    Image.surface=imresize(surface,7500/dimImage(2));
-    Image.captured=imresize(captured,7500/dimImage(2));
-    Image.solubilized=imresize(solubilized,7500/dimImage(2));
-    disp('Images rescaled.')
-
-    %Generate preview image and reorient image set
-    ImMed=double(median(Image.captured(:)));
-    ImPreview=(1-mat2gray(Image.captured(:,:,1), [0 4*ImMed]));
-    figOrientation=figure('menubar','none','toolbar','none','numbertitle','off','Name','figOrientation');
-    warning('off')
-    imshow(ImPreview)
-
-    RESPONSE=0;
-
-    while RESPONSE~=5
-        RESPONSE=menu('Adjust Image Orientation: ','Rotate Clockwise','Rotate Counter Clockwise','Flip Left-to-Right','Flip Top-To-Bottom','>> ACCEPT <<','>> ABORT <<');
-        switch RESPONSE
-            case 1
-                ImPreview=imrotate(ImPreview,-90);
-                Image= structfun(@(x) (imrotate(x,-90)), Image, 'UniformOutput', false);
-                disp('Image rotated clockwise.')
-            case 2
-                ImPreview=imrotate(ImPreview,90);
-                Image= structfun(@(x) (imrotate(x,90)), Image, 'UniformOutput', false);
-                disp('Image rotated counter-clockwise.')
-            case 3
-                ImPreview=fliplr(ImPreview);
-                Image= structfun(@fliplr, Image, 'UniformOutput', false);
-                disp('Image flipped left-to-right.')
-            case 4
-                ImPreview=flipud(ImPreview);
-                Image= structfun(@flipud, Image, 'UniformOutput', false);
-                disp('Image flipped top-to-bottom.')
-            case 5
-                disp('Image orientation accepted.')
-            otherwise
-                Log.Error('User aborted program during image ortientation process.');
-                disp(Log.Error)
-                abortMITOMI();
-                return
+    
+    try
+        %Check to see if GUI stage passed parameters
+        assert(~isempty(Log.FileManager),'MITOMIAnalysis:MITOMIAnalysis_FileManager:usrCancel','User cancelled GUI operation');
+        
+        %Load images and update waitbar
+        WAIT=waitbar(0,'Loading images into MATLAB...','Name','Fraction Complete: ','CreateCancelBtn','setappdata(gcbf,''canceling'',1);');
+        setappdata(WAIT,'canceling',0);
+        waitbar(0/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',0,Log.numFrames));
+        
+        Image.background=imread(Log.nameFrames{Log.bgFrame});
+        bgFilled=~isempty(Image.background);
+        waitbar(bgFilled/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',bgFilled,Log.numFrames));
+        
+        Image.surface=imread(Log.nameFrames{~isempty(Log.bgFrame) + Log.surfaceFrame});
+        waitbar((bgFilled+1)/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',bgFilled+1,Log.numFrames));
+        
+        for i = (bgFilled+Log.surfaceFrame+1):(bgFilled+Log.surfaceFrame+Log.capturedFrames)
+            
+            %Check to see if cancel button has been pressed, throw error
+            if isequal(getappdata(WAIT,'canceling'),1)
+                delete(WAIT)
+                assert(false,'MITOMIAnalysis:ImagePrep:waitCancel','User cancelled image loading operation');
+            end
+            
+            Image.captured(:,:,i-bgFilled-Log.surfaceFrame)=imread(Log.nameFrames{i});
+            waitbar(i/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',i,Log.numFrames));
         end
+        
+        delete(WAIT);
+        
+        %Check to see if all images are the same dimension
+        dimSurface=size(Image.surface);
+        if bgFilled
+            assert(isequal(dimSurface,size(Image.captured(:,:,1)),size(Image.background)),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
+        else
+            assert(isequal(dimSurface,size(Image.captured(:,:,1))),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
+            Image.background=zeros(dimSurface);
+        end
+
+        %Scale image size to prevent Matlab from crashing when disp large image  
+        Image.background=imresize(surface,7500/min(dimSurface));
+        Image.surface=imresize(captured,7500/min(dimSurface));
+        Image.captured=imresize(solubilized,7500/min(dimSurface));
+
+        %Generate preview image and reorient image set
+        ImMed=double(median(Image.captured(:)));
+        ImPreview=(1-mat2gray(Image.captured(:,:,1), [0 4*ImMed]));
+        figOrientation=figure('menubar','none','toolbar','none','numbertitle','off','Name','figOrientation');
+        warning('off')
         imshow(ImPreview)
+
+        RESPONSE=0;
+
+        while RESPONSE~=5
+            RESPONSE=menu('Adjust Image Orientation: ','Rotate Clockwise','Rotate Counter Clockwise','Flip Left-to-Right','Flip Top-To-Bottom','>> ACCEPT <<','>> ABORT <<');
+            switch RESPONSE
+                case 1
+                    ImPreview=imrotate(ImPreview,-90);
+                    Image= structfun(@(x) (imrotate(x,-90)), Image, 'UniformOutput', false);
+                    disp('Image rotated clockwise.')
+                case 2
+                    ImPreview=imrotate(ImPreview,90);
+                    Image= structfun(@(x) (imrotate(x,90)), Image, 'UniformOutput', false);
+                    disp('Image rotated counter-clockwise.')
+                case 3
+                    ImPreview=fliplr(ImPreview);
+                    Image= structfun(@fliplr, Image, 'UniformOutput', false);
+                    disp('Image flipped left-to-right.')
+                case 4
+                    ImPreview=flipud(ImPreview);
+                    Image= structfun(@flipud, Image, 'UniformOutput', false);
+                    disp('Image flipped top-to-bottom.')
+                case 5
+                    disp('Image orientation accepted.')
+                otherwise
+                    assert(false,'MITOMIAnalysis:ImagePrep:orientationCancel','User  cancelled image reorientation process')
+                    Log.Error('User aborted program during image ortientation process.');
+                    abortMITOMI();
+                    return
+            end
+            imshow(ImPreview)
+        end
+
+        close(figOrientation)
+        warning('on')
+        ABORT=0;  
+            
+    catch ME
+        Log.Error=getReport(ME);
+        abortMITOMI();
+        throw(ME)
     end
 
-    close(figOrientation)
-    warning('on')
-    ABORT=0;            
 
 end
 
@@ -831,7 +847,8 @@ save('test.mat')
                 Data.capturedFractionSaturatedBG(W,frameC)=length(find(CapturedBG==65535))./length(find(CapturedBG(:)>0));
                 
             end
-            
+            WAIT=waitbar(0,'Extracting data from positions...','Name','Data Extraction Percent Complete: ');
+        
             waitbar(W/L.NumWells,WAIT,sprintf('%6.3f',W/L.NumWells*100));
 
         end
@@ -902,139 +919,9 @@ function []=abortMITOMI()
         LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
         save(LOGFILENAME,'Log')
         disp('Log file saved.')
+        close()
     end
 end
-
-    function varargout = MITOMIAnalysis_GUI(varargin)
-    % MITOMIANALYSIS_GUI MATLAB code for MITOMIAnalysis_GUI.fig
-    %      MITOMIANALYSIS_GUI, by itself, creates a new MITOMIANALYSIS_GUI or raises the existing
-    %      singleton*.
-    %
-    %      H = MITOMIANALYSIS_GUI returns the handle to a new MITOMIANALYSIS_GUI or the handle to
-    %      the existing singleton*.
-    %
-    %      MITOMIANALYSIS_GUI('CALLBACK',hObject,eventData,handles,...) calls the local
-    %      function named CALLBACK in MITOMIANALYSIS_GUI.M with the given input arguments.
-    %
-    %      MITOMIANALYSIS_GUI('Property','Value',...) creates a new MITOMIANALYSIS_GUI or raises the
-    %      existing singleton*.  Starting from the left, property value pairs are
-    %      applied to the GUI before MITOMIAnalysis_GUI_OpeningFcn gets called.  An
-    %      unrecognized property name or invalid value makes property application
-    %      stop.  All inputs are passed to MITOMIAnalysis_GUI_OpeningFcn via varargin.
-    %
-    %      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
-    %      instance to run (singleton)".
-    %
-    % See also: GUIDE, GUIDATA, GUIHANDLES
-
-    % Edit the above text to modify the response to help MITOMIAnalysis_GUI
-
-    % Last Modified by GUIDE v2.5 29-Jan-2017 09:41:55
-
-    % Begin initialization code - DO NOT EDIT
-    gui_Singleton = 1;
-    gui_State = struct('gui_Name',       mfilename, ...
-                       'gui_Singleton',  gui_Singleton, ...
-                       'gui_OpeningFcn', @MITOMIAnalysis_GUI_OpeningFcn, ...
-                       'gui_OutputFcn',  @MITOMIAnalysis_GUI_OutputFcn, ...
-                       'gui_LayoutFcn',  [] , ...
-                       'gui_Callback',   []);
-    if nargin && ischar(varargin{1})
-        gui_State.gui_Callback = str2func(varargin{1});
-    end
-
-    if nargout
-        [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});
-    else
-        gui_mainfcn(gui_State, varargin{:});
-    end
-    % End initialization code - DO NOT EDIT
-
-    end
-    % --- Executes just before MITOMIAnalysis_GUI is made visible.
-    function MITOMIAnalysis_GUI_OpeningFcn(hObject, eventdata, handles, varargin)
-
-    % Choose default command line output for MITOMIAnalysis_GUI
-    handles.output = hObject;
-    set(handles.edit_output,'String',['MITOMIAnalysis_' datestr(now,30)]);
-    % Update handles structure
-    guidata(hObject, handles);
-
-    % UIWAIT makes MITOMIAnalysis_GUI wait for user response (see UIRESUME)
-    uiwait(handles.figure_MITOMIAnalysis);
-
-    end
-
-    % --- Outputs from this function are returned to the command line.
-    function [] = MITOMIAnalysis_GUI_OutputFcn(hObject, eventdata, handles) 
-    end
-    % --- Executes on button press in pushbutton_navdir.
-    function pushbutton_navdir_Callback(hObject, eventdata, handles)
-
-    %Identify image directory, number of images, image names, and enable 
-    %'Continue' button
-    try
-        dirname=uigetdir('','Select Directory for Analysis');
-        cd(dirname);
-        holderImages=[dir('*.tif');dir('*.jpg');dir('*.png')];
-        nameImages={holderImages};
-        numImages=size(holderImages);
-        set(handles.text_numframe,'String',num2str(numImages(1)));
-        set(handles.text_directory,'String',dirname);
-        set(handles.text_directory,'UserData',{nameImages{1}.name;});
-        set(handles.pushbutton_continue,'Enable','on','ForegroundColor','black');
-        guidata(hObject,handles);
-    catch
-        delete(handles.figure_MITOMIAnalysis);
-    end
-    end
-    
-    % --- Executes on button press in pushbutton_cancel.
-    function pushbutton_cancel_Callback(hObject, eventdata, handles)
-
-    %Close GUI, do not save any information
-    delete(handles.figure_MITOMIAnalysis);
-
-    end
-    % --- Executes on button press in pushbutton_continue.
-    function pushbutton_continue_Callback(hObject, eventdata, handles)
-
-    %Pass data to global workspace for remaining MITOMIAnalysis functions
-    global Log
-    Log.dir=get(handles.text_directory,'String');
-    Log.type=get(get(handles.uibutton_analysisgroup,'SelectedObject'),'String');
-    Log.numFrames=str2double(get(handles.text_numframe,'String'));
-    Log.nameFrames=get(handles.text_directory,'UserData')';
-    Log.background=get(get(handles.uibutton_backgroundgroup,'SelectedObject'),'String');
-    Log.lastUpdated=20170129;
-    Log.nameOutput=get(handles.edit_output,'String');
-
-    %Close GUI
-    delete(handles.figure_MITOMIAnalysis);
-
-
-    end
-    function edit_output_Callback(hObject, eventdata, handles)
-    % hObject    handle to edit_output (see GCBO)
-    % eventdata  reserved - to be defined in a future version of MATLAB
-    % handles    structure with handles and user data (see GUIDATA)
-
-    % Hints: get(hObject,'String') returns contents of edit_output as text
-    %        str2double(get(hObject,'String')) returns contents of edit_output as a double
-
-    end
-    % --- Executes during object creation, after setting all properties.
-    function edit_output_CreateFcn(hObject, eventdata, handles)
-    % hObject    handle to edit_output (see GCBO)
-    % eventdata  reserved - to be defined in a future version of MATLAB
-    % handles    empty - handles not created until after all CreateFcns called
-
-    % Hint: edit controls usually have a white background on Windows.
-    %       See ISPC and COMPUTER.
-    if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-        set(hObject,'BackgroundColor','white');
-    end
-    end
 
 end
 

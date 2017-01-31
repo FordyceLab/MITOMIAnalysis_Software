@@ -55,25 +55,18 @@ function MITOMIAnalysis_FileManager_OpeningFcn(hObject, eventdata, handles, vara
 % Choose default command line output for MITOMIAnalysis_FileManager
 handles.output = hObject;
 global Log
+Log.FileManager=[];
 set(handles.listbox_files,'String',cellstr(Log.nameFrames))
 set(handles.text_order,'String',sprintf('Equilbrium:\n\n1. Background\n    (if included)\n2. Surface Molecule\n    (traditionally protein)\n3. Solubilized Molecule \n    (traditionally DNA) \n\nDissociation:\n\n1. Background\n    (if included)\n2. Surface Molecule\n3. Solubilized Molecule #1\n :\nn. Solubilized Molecule #n \n    (in temporal sequence)'))
 % Update handles structure
 guidata(hObject, handles);
 
 % UIWAIT makes MITOMIAnalysis_FileManager wait for user response (see UIRESUME)
-% uiwait(handles.figure_filemanager);
+uiwait(handles.figure_filemanager);
 
 
 % --- Outputs from this function are returned to the command line.
-function varargout = MITOMIAnalysis_FileManager_OutputFcn(hObject, eventdata, handles) 
-% varargout  cell array for returning output args (see VARARGOUT);
-% hObject    handle to figure
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-% Get default command line output from handles structure
-varargout{1} = handles.output;
-
+function [] = MITOMIAnalysis_FileManager_OutputFcn(hObject, eventdata, handles) 
 
 % --- Executes on selection change in listbox_files.
 function listbox_files_Callback(hObject, eventdata, handles)
@@ -90,11 +83,11 @@ end
 function pushbutton_moveup_Callback(hObject, eventdata, handles)
 
 selection=get(handles.listbox_files,'Value');
-if selection > 1
+if min(selection) > 1
     holderList=get(handles.listbox_files,'String');
-    swapVal=holderList(selection);
-    holderList(selection)=holderList(selection-1);
-    holderList(selection-1)=swapVal;
+    swapVal=holderList(min(selection)-1);
+    holderList(selection-1)=holderList(selection);
+    holderList(max(selection))=swapVal;
     set(handles.listbox_files,'String',holderList);
     set(handles.listbox_files,'Value',selection-1);
     guidata(hObject,handles);
@@ -106,11 +99,11 @@ end
 function pushbutton_movedown_Callback(hObject, eventdata, handles)
 
 selection=get(handles.listbox_files,'Value');
-if selection < length(get(handles.listbox_files,'String'))
+if max(selection) < length(get(handles.listbox_files,'String'))
     holderList=get(handles.listbox_files,'String');
-    swapVal=holderList(selection);
-    holderList(selection)=holderList(selection+1);
-    holderList(selection+1)=swapVal;
+    swapVal=holderList(max(selection)+1);
+    holderList(selection+1)=holderList(selection);
+    holderList(min(selection))=swapVal;
     set(handles.listbox_files,'String',holderList);
     set(handles.listbox_files,'Value',selection+1);
     guidata(hObject,handles);
@@ -120,7 +113,9 @@ end
 
 % --- Executes on button press in pushbutton_Continue.
 function pushbutton_Continue_Callback(hObject, eventdata, handles)
-
+global Log
+Log.FileManager='Passed';
+Log.nameFrames=get(handles.listbox_files,'String');
 delete(handles.figure_filemanager)
 
 
