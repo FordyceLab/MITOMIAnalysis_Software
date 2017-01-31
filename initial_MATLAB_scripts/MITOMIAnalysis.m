@@ -25,7 +25,9 @@ ME=MException('','');
 
 %Core Functions
 try
-    MITOMIAnalysis_GUI();
+    MITOMIAnalysis_Initialization();
+    AnalysisValidation();
+    MITOMIAnalysis_FileManager();
     ImagePrep();
     SetCoordinates();
     AutomatedFeatureFinding();
@@ -38,134 +40,143 @@ catch ME
     warning('on','backtrace')
 end
 
-%% IMAGEPREP FUNCTION
-function []=ImagePrep()
-try
-    %Check to see if GUI stage passed parameters
-    assert(~isempty(Log),'MITOMIAnalysis:MITOMIAnalysis_GUI:usrCancel','User cancelled GUI operation');
+%% ANALYSIS VALIDATION FUNCTION
+function []=AnalysisValidation()
 
-    %Validate passed parameters and extract images
-    switch [Log.type Log.background]
+    try
+        %Check to see if GUI stage passed parameters
+        assert(~isempty(Log.Initialization),'MITOMIAnalysis:MITOMIAnalysis_Initialization:usrCancel','User cancelled GUI operation');
+        
+        %Validate passed parameters
+        switch [Log.type Log.background]
 
-        case 'EquilibriumYes'
-            assert(Log.numFrames==3,'MITOMIAnalysis:ImagePrep:numFrames','Expected 3 frames for equilibrium analysis with background, received %i',Log.numFrames);
-            
+            case 'EquilibriumYes'
+                assert(Log.numFrames==3,'MITOMIAnalysis:ImagePrep:numFrames','Expected 3 frames for equilibrium analysis with background, received %i',Log.numFrames);
+                Log.bgFrame=1;
+                Log.surfaceFrame=1;
+                Log.capturedFrames=1;
 
-        case 'EquilibriumNo'
-            assert(Log.numFrames==2,'MITOMIAnalysis:ImagePrep:numFrames','Expected 2 frames for equilibrium analysis without background, received %i',Log.numFrames);
+            case 'EquilibriumNo'
+                assert(Log.numFrames==2,'MITOMIAnalysis:ImagePrep:numFrames','Expected 2 frames for equilibrium analysis without background, received %i',Log.numFrames);
+                Log.bgFrame=[];
+                Log.surfaceFrame=1;
+                Log.capturedFrames=1;
 
-        case 'DissociationYes'
-            assert(Log.numFrames>3,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 3 frames for dissociation analysis with background, received %i',Log.numFrames);
+            case 'DissociationYes'
+                assert(Log.numFrames>3,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 3 frames for dissociation analysis with background, received %i',Log.numFrames);
+                Log.bgFrame=1;
+                Log.surfaceFrame=1;
+                Log.capturedFrames=length(Log.nameFrames)-2;
 
-        case 'DissociationNo'
-            assert(Log.numFrames>2,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 2 frames for dissociation analysis without background, received %i',Log.numFrames);
+            case 'DissociationNo'
+                assert(Log.numFrames>2,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 2 frames for dissociation analysis without background, received %i',Log.numFrames);
+                Log.bgFrame=[];
+                Log.surfaceFrame=1;
+                Log.capturedFrames=length(Log.nameFrames)-1;
 
+        end
+
+    catch ME
+        Log.Error=getReport(ME);
+        abortMITOMI();
+        throw(ME)
     end
-catch ME
-    Log.Error=getReport(ME);
-    abortMITOMI();
-    throw(ME)
+
 end
 
-    %Figure out user's intentions and name dataset
-    Log.type=questdlg('Select Analysis Type :','MITOMI Analysis','Equilibrium','Dissociation','Equilibrium');
-    disp([Log.type ' analysis type selected.'])
-    Log.bgpresent=questdlg('Include an optional background image :','Yes','No','');
-
-    if strcmp(Log.type,'Dissociation')==1
-        Log.numboundframes=input('Number of time steps starting from t0? : ');
-        Log.numsolframes=1;
-    elseif strcmp(Log.type,'Custom Multi Input')==1
-        Log.numboundframes=input('Number of bound frames? : ');
-        Log.numsolframes=input('Number of solubilized frames? : ');
-    else
-        Log.numboundframes=1;
-        Log.numsolframes=1;
-    end
-
-    Log.name=input('Name dataset: ','s');
-    disp(['Dataset will be labeled as: ' Log.name])
-
-    %Select directory containing stitched data images, build file list
-    disp('Select directory containing stitched images.')
-    cd(uigetdir)
-    d=dir('*.tif');
-    fileStr={d.name};
-
-    %Select images for analysis
-    for solframe=1:Log.numsolframes
-        Sol=listdlg('PromptString',['Select prewash/solubilized molecule image ' num2str(solframe) ' : '],'SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-        Log.solubilized{solframe}=d(Sol).name;
-        solubilized(:,:,solframe)=imread(Log.solubilized{solframe});
-        disp(['Prewash/solublized molecule image ' num2str(solframe) ' of ' num2str(Log.numsolframes) ' loaded: ' Log.solubilized{solframe}])
-    end
-
-    SB=listdlg('PromptString','Select surface immobilized molecule image: ','SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-    Log.surface=d(SB).name;
-    surface=imread(Log.surface);
-    disp(['Immobilized molecule image loaded: ' Log.surface])
-
-    for a=1:Log.numboundframes
-        C=listdlg('PromptString',['Select captured molecule image ' num2str(a) ' : '],'SelectionMode','single','listsize',[320 300],'ListString',fileStr);
-        Log.captured{a}=d(C).name;
-%             if a==1
-%                 captured=imread(L.captured(a));
-%             end
-        captured(:,:,a)=imread(Log.captured{a});
-        disp(['Captured molecule image ' num2str(a) ' of ' num2str(Log.numboundframes) ' loaded: ' Log.captured{a}])
-    end
-
-
-    %Scale image size to prevent Matlab from crashing when disp images
-    %Scaling small images also aids the auto-detection of features
-    dimImage=sort(size(surface));
-    Image.surface=imresize(surface,7500/dimImage(2));
-    Image.captured=imresize(captured,7500/dimImage(2));
-    Image.solubilized=imresize(solubilized,7500/dimImage(2));
-    disp('Images rescaled.')
-
-    %Generate preview image and reorient image set
-    ImMed=double(median(Image.captured(:)));
-    ImPreview=(1-mat2gray(Image.captured(:,:,1), [0 4*ImMed]));
-    figOrientation=figure('menubar','none','toolbar','none','numbertitle','off','Name','figOrientation');
-    warning('off')
-    imshow(ImPreview)
-
-    RESPONSE=0;
-
-    while RESPONSE~=5
-        RESPONSE=menu('Adjust Image Orientation: ','Rotate Clockwise','Rotate Counter Clockwise','Flip Left-to-Right','Flip Top-To-Bottom','>> ACCEPT <<','>> ABORT <<');
-        switch RESPONSE
-            case 1
-                ImPreview=imrotate(ImPreview,-90);
-                Image= structfun(@(x) (imrotate(x,-90)), Image, 'UniformOutput', false);
-                disp('Image rotated clockwise.')
-            case 2
-                ImPreview=imrotate(ImPreview,90);
-                Image= structfun(@(x) (imrotate(x,90)), Image, 'UniformOutput', false);
-                disp('Image rotated counter-clockwise.')
-            case 3
-                ImPreview=fliplr(ImPreview);
-                Image= structfun(@fliplr, Image, 'UniformOutput', false);
-                disp('Image flipped left-to-right.')
-            case 4
-                ImPreview=flipud(ImPreview);
-                Image= structfun(@flipud, Image, 'UniformOutput', false);
-                disp('Image flipped top-to-bottom.')
-            case 5
-                disp('Image orientation accepted.')
-            otherwise
-                Log.Error('User aborted program during image ortientation process.');
-                disp(Log.Error)
-                abortMITOMI();
-                return
+%% IMAGEPREP FUNCTION
+function []=ImagePrep()
+    
+    try
+        %Check to see if GUI stage passed parameters
+        assert(~isempty(Log.FileManager),'MITOMIAnalysis:MITOMIAnalysis_FileManager:usrCancel','User cancelled GUI operation');
+        
+        %Load images and update waitbar
+        WAIT=waitbar(0,'Loading images into MATLAB...','Name','Fraction Complete: ','CreateCancelBtn','setappdata(gcbf,''canceling'',1);');
+        setappdata(WAIT,'canceling',0);
+        waitbar(0/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',0,Log.numFrames));
+        
+        Image.background=imread(Log.nameFrames{Log.bgFrame});
+        bgFilled=~isempty(Image.background);
+        waitbar(bgFilled/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',bgFilled,Log.numFrames));
+        
+        Image.surface=imread(Log.nameFrames{~isempty(Log.bgFrame) + Log.surfaceFrame});
+        waitbar((bgFilled+1)/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',bgFilled+1,Log.numFrames));
+        
+        for i = (bgFilled+Log.surfaceFrame+1):(bgFilled+Log.surfaceFrame+Log.capturedFrames)
+            
+            %Check to see if cancel button has been pressed, throw error
+            if isequal(getappdata(WAIT,'canceling'),1)
+                delete(WAIT)
+                assert(false,'MITOMIAnalysis:ImagePrep:waitCancel','User cancelled image loading operation');
+            end
+            
+            Image.captured(:,:,i-bgFilled-Log.surfaceFrame)=imread(Log.nameFrames{i});
+            waitbar(i/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',i,Log.numFrames));
         end
+        
+        delete(WAIT);
+        
+        %Check to see if all images are the same dimension
+        dimSurface=size(Image.surface);
+        if bgFilled
+            assert(isequal(dimSurface,size(Image.captured(:,:,1)),size(Image.background)),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
+        else
+            assert(isequal(dimSurface,size(Image.captured(:,:,1))),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
+            Image.background=zeros(dimSurface);
+        end
+
+        %Scale image size to prevent Matlab from crashing when disp large image  
+        Image.background=imresize(surface,7500/min(dimSurface));
+        Image.surface=imresize(captured,7500/min(dimSurface));
+        Image.captured=imresize(solubilized,7500/min(dimSurface));
+
+        %Generate preview image and reorient image set
+        ImMed=double(median(Image.captured(:)));
+        ImPreview=(1-mat2gray(Image.captured(:,:,1), [0 4*ImMed]));
+        figOrientation=figure('menubar','none','toolbar','none','numbertitle','off','Name','figOrientation');
+        warning('off')
         imshow(ImPreview)
+
+        RESPONSE=0;
+
+        while RESPONSE~=5
+            RESPONSE=menu('Adjust Image Orientation: ','Rotate Clockwise','Rotate Counter Clockwise','Flip Left-to-Right','Flip Top-To-Bottom','>> ACCEPT <<','>> ABORT <<');
+            switch RESPONSE
+                case 1
+                    ImPreview=imrotate(ImPreview,-90);
+                    Image= structfun(@(x) (imrotate(x,-90)), Image, 'UniformOutput', false);
+                    disp('Image rotated clockwise.')
+                case 2
+                    ImPreview=imrotate(ImPreview,90);
+                    Image= structfun(@(x) (imrotate(x,90)), Image, 'UniformOutput', false);
+                    disp('Image rotated counter-clockwise.')
+                case 3
+                    ImPreview=fliplr(ImPreview);
+                    Image= structfun(@fliplr, Image, 'UniformOutput', false);
+                    disp('Image flipped left-to-right.')
+                case 4
+                    ImPreview=flipud(ImPreview);
+                    Image= structfun(@flipud, Image, 'UniformOutput', false);
+                    disp('Image flipped top-to-bottom.')
+                case 5
+                    disp('Image orientation accepted.')
+                otherwise
+                    assert(false,'MITOMIAnalysis:ImagePrep:orientationCancel','User  cancelled image reorientation process')
+            end
+            imshow(ImPreview)
+        end
+
+        close(figOrientation)
+        warning('on')
+        ABORT=0;  
+            
+    catch ME
+        Log.Error=getReport(ME);
+        abortMITOMI();
+        throw(ME)
     end
 
-    close(figOrientation)
-    warning('on')
-    ABORT=0;            
 
 end
 
@@ -833,7 +844,8 @@ save('test.mat')
                 Data.capturedFractionSaturatedBG(W,frameC)=length(find(CapturedBG==65535))./length(find(CapturedBG(:)>0));
                 
             end
-            
+            WAIT=waitbar(0,'Extracting data from positions...','Name','Data Extraction Percent Complete: ');
+        
             waitbar(W/L.NumWells,WAIT,sprintf('%6.3f',W/L.NumWells*100));
 
         end
@@ -904,6 +916,7 @@ function []=abortMITOMI()
         LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
         save(LOGFILENAME,'Log')
         disp('Log file saved.')
+        close()
     end
 end
 
