@@ -22,7 +22,7 @@ function varargout = MITOMIAnalysis_SetCoordinates(varargin)
 
 % Edit the above text to modify the response to help MITOMIAnalysis_GUI
 
-% Last Modified by GUIDE v2.5 01-Feb-2017 18:00:22
+% Last Modified by GUIDE v2.5 01-Feb-2017 18:33:25
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -48,42 +48,121 @@ end
 function MITOMIAnalysis_SetCoordinates_OpeningFcn(hObject, eventdata, handles, varargin)
 
 % Choose default command line output for MITOMIAnalysis_GUI
+global Log
+Log.Manipulation=[];
 handles.output = hObject;
-set(handles.uipanel_scroll,'UserData',varargin{1});
-set(handles.text_directions,'String',sprintf('1.Navigate to one of the four corners of the array \n\n2. Zoom into the spot to easily see the spot \n\n3. Adjust Gamma to make the background barely visible \n4. Lock the image \n5. Press the ''Set Coordinate'' button \n\n6. Click on three points on the circumference of the spot \n7. Unlock image and continue to the next corner of the array'))
+set(handles.uipanel_image,'UserData',varargin{1});
+set(handles.figure_manipulation,'UserData',varargin{2});
+set(handles.text_directions,'String',sprintf('Directions:\nReorient the image such that chamber #1 is on the top left and chamber #2 is directly below that.\n\nAlso, set the dimensions of the array in the text boxes below'))
 guidata(hObject, handles);
 
-global Log
-
-scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-scrollImage = imshow(get(handles.uipanel_scroll,'UserData'),'parent',scrollAxes);
-Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
-if Log.vertex==0
-    Log.ImageManipulationSurface=[];
-    Log.ImageManipulationBackground=[];
-end
+scrollAxes = axes('parent',handles.uipanel_image,'position',[0 0 1 1],'Units','pixels');
+imshow(get(handles.uipanel_image,'UserData'),'parent',scrollAxes);
 
 % UIWAIT makes MITOMIAnalysis_GUI wait for user response (see UIRESUME)
 uiwait(handles.figure_manipulation);
 
-
-
 % --- Outputs from this function are returned to the command line.
 function MITOMIAnalysis_SetCoordinates_OutputFcn(hObject, eventdata, handles) 
 
-% --- Executes on button press in pushbutton_cancel.
+function pushbutton_continue_Callback(hObject, eventdata, handles)
+
+global Log
+
+Log.ImageHolder=get(handles.figure_manipulation,'UserData');
+Log.rows=str2num(get(handles.edit_cols,'String'));
+Log.cols=str2num(get(handles.edit_rows,'String'));
+
+try
+    assert(Log.rows>0 && rem(Log.rows,1),'MITOMIAnalysis:ImageManipulation:rowValue','Row value declared was not an integer greater than 0');
+    assert(Log.cols>0 && rem(Log.cols,1),'MITOIMAnalysis:ImageManipulation:colValue','Column value declared was not an integer greater than 0');
+catch
+    delete(handles.figure_manipulation)
+end
+
+Log.ImageManipulation='Passed';
+
+delete(handles.figure_manipulation)
+
+
 function pushbutton_cancel_Callback(hObject, eventdata, handles)
 delete(handles.figure_manipulation)
 
-% --- Executes on slider movement.
 function slider_gamma_Callback(hObject, eventdata, handles)
 
-global Log
-Log.tempgamma=get(hObject,'Value');
-API=iptgetapi(Log.ManipulationAPI);
-display=imadjust(get(handles.uipanel_scroll,'UserData'),[],[],Log.tempgamma);
-API.replaceImage(display,'PreserveView',true);
+display=imadjust(get(handles.uipanel_image,'UserData'),[],[],get(hObject,'Value'));
+scrollAxes = axes('parent',handles.uipanel_image,'position',[0 0 1 1],'Units','pixels');
+imshow(display,'parent',scrollAxes);
 
+function pushbutton_lr_Callback(hObject, eventdata, handles)
+
+    impreview=get(handles.uipanel_image,'UserData');
+    images=get(handles.figure_manipulation,'UserData');
+    impreview=fliplr(impreview);
+    display=imadjust(impreview,[],[],get(handles.slider_gamma,'Value'));
+    delete(handles.uipanel_image.Children)
+    scrollAxes = axes('parent',handles.uipanel_image,'position',[0 0 1 1],'Units','pixels');
+    imshow(display,'parent',scrollAxes);
+    images= structfun(@fliplr, images, 'UniformOutput', false);
+    set(handles.uipanel_image,'UserData',impreview);
+    set(handles.figure_manipulation,'UserData',images)
+    guidata(hObject,handles)
+
+function pushbutton_tb_Callback(hObject, eventdata, handles)
+
+    impreview=get(handles.uipanel_image,'UserData');
+    images=get(handles.figure_manipulation,'UserData');
+    impreview=flipud(impreview);   
+    display=imadjust(impreview,[],[],get(handles.slider_gamma,'Value'));
+    delete(handles.uipanel_image.Children)
+    scrollAxes = axes('parent',handles.uipanel_image,'position',[0 0 1 1],'Units','pixels');
+    imshow(display,'parent',scrollAxes);
+    images= structfun(@flipud, images, 'UniformOutput', false);
+    set(handles.uipanel_image,'UserData',impreview);
+    set(handles.figure_manipulation,'UserData',images)
+    guidata(hObject,handles)
+
+
+function pushbutton_p90_Callback(hObject, eventdata, handles)
+
+    impreview=get(handles.uipanel_image,'UserData');
+    images=get(handles.figure_manipulation,'UserData');
+    impreview=imrotate(impreview,90);   
+    display=imadjust(impreview,[],[],get(handles.slider_gamma,'Value'));
+    delete(handles.uipanel_image.Children)
+    scrollAxes = axes('parent',handles.uipanel_image,'position',[0 0 1 1],'Units','pixels');
+    imshow(display,'parent',scrollAxes);
+    images= structfun(@(x) (imrotate(x,90)), images, 'UniformOutput', false);
+    set(handles.uipanel_image,'UserData',impreview);
+    set(handles.figure_manipulation,'UserData',images)
+    guidata(hObject,handles)
+
+function pushbutton_n90_Callback(hObject, eventdata, handles)
+
+    impreview=get(handles.uipanel_image,'UserData');
+    images=get(handles.figure_manipulation,'UserData');
+    impreview=imrotate(impreview,-90);    
+    display=imadjust(impreview,[],[],get(handles.slider_gamma,'Value'));
+    delete(handles.uipanel_image.Children)
+    scrollAxes = axes('parent',handles.uipanel_image,'position',[0 0 1 1],'Units','pixels');
+    imshow(display,'parent',scrollAxes);
+    images= structfun(@(x) (imrotate(x,-90)), images, 'UniformOutput', false);
+    set(handles.uipanel_image,'UserData',impreview);
+    set(handles.figure_manipulation,'UserData',images)
+    guidata(hObject,handles)
+
+function edit_row_CreateFcn(hObject, eventdata, handles)
+
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+% --- Executes during object creation, after setting all properties.
+function edit_col_CreateFcn(hObject, eventdata, handles)
+
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
 
 % --- Executes during object creation, after setting all properties.
 function slider_gamma_CreateFcn(hObject, eventdata, handles)
@@ -91,92 +170,3 @@ function slider_gamma_CreateFcn(hObject, eventdata, handles)
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
-
-
-% --- Executes on slider movement.
-function slider_zoom_Callback(hObject, eventdata, handles)
-
-global Log
-API=iptgetapi(Log.ManipulationAPI);
-API.setMagnification(2^(get(hObject,'Value')-1));
-
-
-% --- Executes during object creation, after setting all properties.
-function slider_zoom_CreateFcn(hObject, eventdata, handles)
-if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor',[.9 .9 .9]);
-end
-
-
-% --- Executes on button press in pushbutton_lock.
-function pushbutton_lock_Callback(hObject, eventdata, handles)
-
-global Log
-
-set(hObject,'UserData',get(hObject,'UserData')+1);
-if rem(get(hObject,'UserData'),2)
-    API=iptgetapi(Log.ManipulationAPI);
-    dimImage=size(get(handles.uipanel_scroll,'UserData'));
-    Log.currView=API.getVisibleImageRect();
-    Log.magView=API.getMagnification();
-    if round(Log.currView(1)+Log.currView(3))> dimImage(2)
-        Log.currView(1)=floor(dimImage(2)-Log.currView(3));
-    end
-    if round(Log.currView(2)+Log.currView(4))> dimImage(1)
-        Log.currView(2)=floor(dimImage(1)-Log.currView(4));
-    end
-    fullImage=get(handles.uipanel_scroll,'UserData');
-    delete(handles.uipanel_scroll.Children)
-    scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-    subImage=fullImage(round(Log.currView(2):round(Log.currView(2)+Log.currView(4))),round(Log.currView(1)):round(Log.currView(1)+Log.currView(3)));
-    display=imadjust(subImage,[],[],Log.tempgamma);
-    imshow(display,'parent',scrollAxes);
-    set(handles.pushbutton_setcoor,{'Enable','ForegroundColor'},{'on','black'});
-    set(handles.slider_gamma,'Enable','inactive');
-    set(handles.slider_zoom,'Enable','inactive');
-    set(handles.pushbutton_lock,'String','Unlock Image to Navigate')
-else
-    set(handles.pushbutton_setcoor,{'Enable','ForegroundColor','String'},{'inactive',[0.8 0.8 0.8],sprintf('Set Coordinate #%i',get(handles.pushbutton_setcoor,'UserData')+1)});
-    delete(handles.uipanel_scroll.Children)
-    scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-    display=imadjust(get(handles.uipanel_scroll,'UserData'),[],[],Log.tempgamma);
-    scrollImage = imshow(display,'parent',scrollAxes);
-    Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage);
-    API=iptgetapi(Log.ManipulationAPI);
-    API.setMagnification(Log.magView);
-    API.setVisibleLocation(Log.currView(1:2));
-    set(handles.slider_gamma,'Enable','on');
-    set(handles.slider_zoom,'Enable','on');
-    set(handles.pushbutton_lock,'String','Lock Image to Set Coordinates')
-
-end
-guidata(hObject,handles)
-
-% --- Executes on button press in pushbutton_setcoor.
-function pushbutton_setcoor_Callback(hObject, eventdata, handles)
-global Log
-
-set(hObject,{'UserData'},{get(hObject,'UserData')+1}); 
-set(handles.pushbutton_lock,'Enable','inactive','ForegroundColor',[0.8 0.8 0.8]);
-try
-    sample=ginputax(handles.uipanel_scroll,3);
-catch
-    assert(false,'MITOMIAnalysis:ImageManipulation:axisError','User clicked off the image when setting coordinates')
-    return
-end
-Log.vertex=Log.vertex+1;
-Log.Coor{Log.vertex}=[sample(:,1)+Log.currView(1),sample(:,2)+Log.currView(2)];
-Log.gamma(Log.vertex)=get(handles.slider_gamma,'Value');
-
-if get(hObject,'UserData')>3
-    if isempty(Log.ImageManipulationSurface)
-        Log.ImageManipulationSurface='Passed';
-    else
-        Log.ImageManipulationBackground='Passed';
-    end
-    delete(handles.figure_manipulation)
-    return
-end
-set(handles.pushbutton_lock,'Enable','on','ForegroundColor','black');
-set(handles.pushbutton_setcoor,{'Enable','ForegroundColor','String'},{'inactive',[0.8 0.8 0.8],sprintf('Coordinate #%i Set !',get(hObject,'UserData'))});
-guidata(hObject,handles);
