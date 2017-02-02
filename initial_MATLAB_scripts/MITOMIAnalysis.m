@@ -912,7 +912,11 @@ save('test.mat')
     end
 
 function []=abortMITOMI()
+<<<<<<< HEAD
     if ~strcmp(ME.identifier,'MITOMIAnalysis:MITOMIAnalysis_GUI:usrCancel')
+=======
+    if ~strcmp(ME.identifier,'MITOMIAnalysis:MITOMIAnalysis_Initialization:usrCancel')
+>>>>>>> test-branch
         LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
         save(LOGFILENAME,'Log')
         disp('Log file saved.')
