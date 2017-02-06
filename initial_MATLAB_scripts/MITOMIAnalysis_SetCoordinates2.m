@@ -22,7 +22,7 @@ function varargout = MITOMIAnalysis_SetCoordinates(varargin)
 
 % Edit the above text to modify the response to help MITOMIAnalysis_GUI
 
-% Last Modified by GUIDE v2.5 01-Feb-2017 17:58:34
+% Last Modified by GUIDE v2.5 03-Feb-2017 16:44:37
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -47,7 +47,7 @@ end
 % --- Executes just before MITOMIAnalysis_GUI is made visible.
 function MITOMIAnalysis_SetCoordinates_OpeningFcn(hObject, eventdata, handles, varargin)
 
-%Set initial control text and pass image into object
+% Choose default command line output for MITOMIAnalysis_GUI
 handles.output = hObject;
 set(handles.uipanel_scroll,'UserData',varargin{1});
 set(handles.text_directions,'String',sprintf('1.Navigate to one of the four corners of the array \n\n2. Zoom into the spot to easily see the spot \n\n3. Adjust Gamma to make the background barely visible \n4. Lock the image \n5. Press the ''Set Coordinate'' button \n\n6. Click on three points on the circumference of the spot \n7. Unlock image and continue to the next corner of the array'))
@@ -55,20 +55,18 @@ guidata(hObject, handles);
 
 global Log
 
-%Generate initial image and grab controls
 scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
 scrollImage = imshow(get(handles.uipanel_scroll,'UserData'),'parent',scrollAxes);
 Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
-
-if isempty(Log.vertex) %User's first pass through function
-    Log.vertex=0;
-    Log.tempgamma=get(handles.slider_gamma,'Value');
+if Log.vertex==0
     Log.ImageManipulationSurface=[];
     Log.ImageManipulationBackground=[];
 end
 
 % UIWAIT makes MITOMIAnalysis_GUI wait for user response (see UIRESUME)
 uiwait(handles.figure_manipulation);
+
+
 
 % --- Outputs from this function are returned to the command line.
 function MITOMIAnalysis_SetCoordinates_OutputFcn(hObject, eventdata, handles) 
@@ -81,8 +79,6 @@ delete(handles.figure_manipulation)
 function slider_gamma_Callback(hObject, eventdata, handles)
 
 global Log
-
-%Grab image controls, current gamma and update image
 Log.tempgamma=get(hObject,'Value');
 API=iptgetapi(Log.ManipulationAPI);
 display=imadjust(get(handles.uipanel_scroll,'UserData'),[],[],Log.tempgamma);
@@ -101,8 +97,6 @@ end
 function slider_zoom_Callback(hObject, eventdata, handles)
 
 global Log
-
-%Grab image controls and update magnification
 API=iptgetapi(Log.ManipulationAPI);
 API.setMagnification(2^(get(hObject,'Value')-1));
 
@@ -119,56 +113,38 @@ function pushbutton_lock_Callback(hObject, eventdata, handles)
 
 global Log
 
-%Toggle lock state
 set(hObject,'UserData',get(hObject,'UserData')+1);
-
-if rem(get(hObject,'UserData'),2) %Lock GUI
-    
-    %Grab image controls and states
+if rem(get(hObject,'UserData'),2)
     API=iptgetapi(Log.ManipulationAPI);
     dimImage=size(get(handles.uipanel_scroll,'UserData'));
     Log.currView=API.getVisibleImageRect();
     Log.magView=API.getMagnification();
-    
-    %Prevent image coordinates from exceeding image dimensions
     if round(Log.currView(1)+Log.currView(3))> dimImage(2)
         Log.currView(1)=floor(dimImage(2)-Log.currView(3));
     end
-    
     if round(Log.currView(2)+Log.currView(4))> dimImage(1)
         Log.currView(2)=floor(dimImage(1)-Log.currView(4));
     end
-    
-    %Replace full image with subimage
     fullImage=get(handles.uipanel_scroll,'UserData');
     delete(handles.uipanel_scroll.Children)
     scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
     subImage=fullImage(round(Log.currView(2):round(Log.currView(2)+Log.currView(4))),round(Log.currView(1)):round(Log.currView(1)+Log.currView(3)));
     display=imadjust(subImage,[],[],Log.tempgamma);
     imshow(display,'parent',scrollAxes);
-    
-    %Update GUI controls
     set(handles.pushbutton_setcoor,{'Enable','ForegroundColor'},{'on','black'});
     set(handles.slider_gamma,'Enable','inactive');
     set(handles.slider_zoom,'Enable','inactive');
     set(handles.pushbutton_lock,'String','Unlock Image to Navigate')
-    
-else %Unlock GUI
-    
-    %Replace subimage with full image
+else
+    set(handles.pushbutton_setcoor,{'Enable','ForegroundColor','String'},{'inactive',[0.8 0.8 0.8],sprintf('Set Coordinate #%i',get(handles.pushbutton_setcoor,'UserData')+1)});
     delete(handles.uipanel_scroll.Children)
     scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
     display=imadjust(get(handles.uipanel_scroll,'UserData'),[],[],Log.tempgamma);
     scrollImage = imshow(display,'parent',scrollAxes);
-    
-    %Grab new image controls and reset states
     Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage);
     API=iptgetapi(Log.ManipulationAPI);
     API.setMagnification(Log.magView);
     API.setVisibleLocation(Log.currView(1:2));
-    
-    %Update GUI controls
-    set(handles.pushbutton_setcoor,{'Enable','ForegroundColor','String'},{'inactive',[0.8 0.8 0.8],sprintf('Set Coordinate #%i',get(handles.pushbutton_setcoor,'UserData')+1)});
     set(handles.slider_gamma,'Enable','on');
     set(handles.slider_zoom,'Enable','on');
     set(handles.pushbutton_lock,'String','Lock Image to Set Coordinates')
@@ -178,87 +154,29 @@ guidata(hObject,handles)
 
 % --- Executes on button press in pushbutton_setcoor.
 function pushbutton_setcoor_Callback(hObject, eventdata, handles)
-
 global Log
 
-%Lock GUI operations
 set(hObject,{'UserData'},{get(hObject,'UserData')+1}); 
 set(handles.pushbutton_lock,'Enable','inactive','ForegroundColor',[0.8 0.8 0.8]);
-
 try
-    
-    %Collect points from circumference
-    [sample]=ginputax(handles.uipanel_scroll,3);
-    
-    %Find center of circle and approximate radius
-    p1=[sample(1,:) 1]; 
-    p2=[sample(2,:) 1]; 
-    p3=[sample(3,:) 1];
-    t = p2-p1; 
-    u = p3-p1; 
-    v = p3-p2;
-    w = cross(t,u);
-    t2 = sum(t.^2); 
-    u2 = sum(u.^2); 
-    w2 = sum(w.^2);
-    c = p1+(t2*sum(u.*v)*u-u2*sum(t.*v)*t)/(2*w2);
-    RadiusSample = (sqrt(t2*u2*sum(v.^2)/w2))/2;
-
+    sample=ginputax(handles.uipanel_scroll,3);
 catch
     assert(false,'MITOMIAnalysis:ImageManipulation:axisError','User clicked off the image when setting coordinates')
-    return %%%CONFIRM THIS RETURN CLOSES GUI ON ERROR%%%
+    return
 end
-
-%Pass to Log
 Log.vertex=Log.vertex+1;
-Log.RadiusSample(Log.vertex)=RadiusSample;
-Log.CoorList(Log.vertex,:)=[c(1,1)+Log.currView(1),c(1,2)+Log.currView(2)];
+Log.Coor{Log.vertex}=[sample(:,1)+Log.currView(1),sample(:,2)+Log.currView(2)];
 Log.gamma(Log.vertex)=get(handles.slider_gamma,'Value');
 
-if get(hObject,'UserData')>3 %User has selected 4 vertices
-    
-    if isempty(Log.ImageManipulationSurface)  %User's first pass on func
-        
-        %Interpolate array for button positions
-        vertices=round(sortrows(Log.CoorList(1:4,:),2));
-        TopRowX=sort(linspace(vertices(1,1),vertices(2,1),Log.Cols));
-        BotRowX=sort(linspace(vertices(3,1),vertices(4,1),Log.Cols));
-        TopRowY=interp1(vertices(1:2,1),vertices(1:2,2),TopRowX);
-        BotRowY=interp1(vertices(3:4,1),vertices(3:4,2),BotRowX);
-        for j=1:Log.Cols
-            ColYVal=sort(linspace(TopRowY(j),BotRowY(j),Log.Row));
-            ColXVal=interp1([TopRowY(j) BotRowY(j)],[TopRowX(j) BotRowX(j)],ColYVal);
-            Log.CoorButtons=round(vertcat(Log.CoorButtons,[ColXVal' ColYVal']));
-        end
-        
-        Log.ApproxButtonRadius=mean(Log.RadiusSample(1:4));
+if get(hObject,'UserData')>3
+    if isempty(Log.ImageManipulationSurface)
         Log.ImageManipulationSurface='Passed';
-        
-    else %User has completed function once before
-        
-        %Interpolate array for background positions
-        vertices=round(sortrows(Log.Coor(5:8,:),2));
-        TopRowX=sort(linspace(vertices(1,1),vertices(2,1),Log.Cols));
-        BotRowX=sort(linspace(vertices(3,1),vertices(4,1),Log.Cols));
-        TopRowY=interp1(vertices(1:2,1),vertices(1:2,2),TopRowX);
-        BotRowY=interp1(vertices(3:4,1),vertices(3:4,2),BotRowX);
-        for j=1:Log.Cols
-            ColYVal=sort(linspace(TopRowY(j),BotRowY(j),Log.NumRow));
-            ColXVal=interp1([TopRowY(j) BotRowY(j)],[TopRowX(j) BotRowX(j)],ColYVal);
-            Log.CoorBackground=round(vertcat(Log.CoorBackground,[ColXVal' ColYVal']));
-        end
-        
-        Log.ApproxBackgroundRadius=mean(Log.RadiusSample(5:8));
+    else
         Log.ImageManipulationBackground='Passed';
     end
-    
-    %Close GUI
     delete(handles.figure_manipulation)
     return
-    
 end
-
-%Reset GUI for user
 set(handles.pushbutton_lock,'Enable','on','ForegroundColor','black');
 set(handles.pushbutton_setcoor,{'Enable','ForegroundColor','String'},{'inactive',[0.8 0.8 0.8],sprintf('Coordinate #%i Set !',get(hObject,'UserData'))});
 guidata(hObject,handles);
