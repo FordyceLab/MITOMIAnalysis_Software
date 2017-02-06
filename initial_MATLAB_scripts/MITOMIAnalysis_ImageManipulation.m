@@ -170,3 +170,7 @@ function slider_gamma_CreateFcn(hObject, eventdata, handles)
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
+
+function edit_row_Callback(hObject,eventdata,handles)
+
+function edit_col_Callback(hObject,eventdata,handles)
