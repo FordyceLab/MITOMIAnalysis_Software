@@ -60,11 +60,9 @@ scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','
 scrollImage = imshow(get(handles.uipanel_scroll,'UserData'),'parent',scrollAxes);
 Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
 
-if isempty(Log.vertex) %User's first pass through function
-    Log.vertex=0;
-    Log.tempgamma=get(handles.slider_gamma,'Value');
-    Log.ImageManipulationSurface=[];
-    Log.ImageManipulationBackground=[];
+if isempty(Log.Vertex) %User's first pass through function
+    Log.Vertex=0;
+    Log.TempGamma=get(handles.slider_gamma,'Value');
 end
 
 % UIWAIT makes MITOMIAnalysis_GUI wait for user response (see UIRESUME)
@@ -83,9 +81,9 @@ function slider_gamma_Callback(hObject, eventdata, handles)
 global Log
 
 %Grab image controls, current gamma and update image
-Log.tempgamma=get(hObject,'Value');
+Log.TempGamma=get(hObject,'Value');
 API=iptgetapi(Log.ManipulationAPI);
-display=imadjust(get(handles.uipanel_scroll,'UserData'),[],[],Log.tempgamma);
+display=imadjust(get(handles.uipanel_scroll,'UserData'),[],[],Log.TempGamma);
 API.replaceImage(display,'PreserveView',true);
 
 
@@ -127,24 +125,24 @@ if rem(get(hObject,'UserData'),2) %Lock GUI
     %Grab image controls and states
     API=iptgetapi(Log.ManipulationAPI);
     dimImage=size(get(handles.uipanel_scroll,'UserData'));
-    Log.currView=API.getVisibleImageRect();
-    Log.magView=API.getMagnification();
+    Log.CurrView=API.getVisibleImageRect();
+    Log.MagView=API.getMagnification();
     
     %Prevent image coordinates from exceeding image dimensions
-    if round(Log.currView(1)+Log.currView(3))> dimImage(2)
-        Log.currView(1)=floor(dimImage(2)-Log.currView(3));
+    if round(Log.CurrView(1)+Log.CurrView(3))> dimImage(2)
+        Log.CurrView(1)=floor(dimImage(2)-Log.CurrView(3));
     end
     
-    if round(Log.currView(2)+Log.currView(4))> dimImage(1)
-        Log.currView(2)=floor(dimImage(1)-Log.currView(4));
+    if round(Log.CurrView(2)+Log.CurrView(4))> dimImage(1)
+        Log.CurrView(2)=floor(dimImage(1)-Log.CurrView(4));
     end
     
     %Replace full image with subimage
     fullImage=get(handles.uipanel_scroll,'UserData');
     delete(handles.uipanel_scroll.Children)
     scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-    subImage=fullImage(round(Log.currView(2):round(Log.currView(2)+Log.currView(4))),round(Log.currView(1)):round(Log.currView(1)+Log.currView(3)));
-    display=imadjust(subImage,[],[],Log.tempgamma);
+    subImage=fullImage(round(Log.CurrView(2):round(Log.CurrView(2)+Log.CurrView(4))),round(Log.CurrView(1)):round(Log.CurrView(1)+Log.CurrView(3)));
+    display=imadjust(subImage,[],[],Log.TempGamma);
     imshow(display,'parent',scrollAxes);
     
     %Update GUI controls
@@ -158,14 +156,14 @@ else %Unlock GUI
     %Replace subimage with full image
     delete(handles.uipanel_scroll.Children)
     scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-    display=imadjust(get(handles.uipanel_scroll,'UserData'),[],[],Log.tempgamma);
+    display=imadjust(get(handles.uipanel_scroll,'UserData'),[],[],Log.TempGamma);
     scrollImage = imshow(display,'parent',scrollAxes);
     
     %Grab new image controls and reset states
     Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage);
     API=iptgetapi(Log.ManipulationAPI);
-    API.setMagnification(Log.magView);
-    API.setVisibleLocation(Log.currView(1:2));
+    API.setMagnification(Log.MagView);
+    API.setVisibleLocation(Log.CurrView(1:2));
     
     %Update GUI controls
     set(handles.pushbutton_setcoor,{'Enable','ForegroundColor','String'},{'inactive',[0.8 0.8 0.8],sprintf('Set Coordinate #%i',get(handles.pushbutton_setcoor,'UserData')+1)});
@@ -210,14 +208,14 @@ catch
 end
 
 %Pass to Log
-Log.vertex=Log.vertex+1;
-Log.RadiusSample(Log.vertex)=RadiusSample;
-Log.CoorList(Log.vertex,:)=[c(1,1)+Log.currView(1),c(1,2)+Log.currView(2)];
-Log.gamma(Log.vertex)=get(handles.slider_gamma,'Value');
+Log.Vertex=Log.Vertex+1;
+Log.RadiusSample(Log.Vertex)=RadiusSample;
+Log.CoorList(Log.Vertex,:)=[c(1,1)+Log.CurrView(1),c(1,2)+Log.CurrView(2)];
+Log.Gamma(Log.Vertex)=Log.TempGamma;
 
 if get(hObject,'UserData')>3 %User has selected 4 vertices
     
-    if isempty(Log.ImageManipulationSurface)  %User's first pass on func
+    if isempty(Log.SetCoordinatesSurface)  %User's first pass on func
         
         %Interpolate array for button positions
         vertices=round(sortrows(Log.CoorList(1:4,:),2));
@@ -226,30 +224,31 @@ if get(hObject,'UserData')>3 %User has selected 4 vertices
         TopRowY=interp1(vertices(1:2,1),vertices(1:2,2),TopRowX);
         BotRowY=interp1(vertices(3:4,1),vertices(3:4,2),BotRowX);
         for j=1:Log.Cols
-            ColYVal=sort(linspace(TopRowY(j),BotRowY(j),Log.Row));
+            ColYVal=sort(linspace(TopRowY(j),BotRowY(j),Log.Rows));
             ColXVal=interp1([TopRowY(j) BotRowY(j)],[TopRowX(j) BotRowX(j)],ColYVal);
             Log.CoorButtons=round(vertcat(Log.CoorButtons,[ColXVal' ColYVal']));
         end
         
-        Log.ApproxButtonRadius=mean(Log.RadiusSample(1:4));
-        Log.ImageManipulationSurface='Passed';
+        Log.ApproxButtonRadius=round(mean(Log.RadiusSample(1:4)));
+        Log.ApproxGammaSurface=mean(Log.Gamma(1:4));
+        Log.SetCoordinatesSurface='Passed';
         
     else %User has completed function once before
         
         %Interpolate array for background positions
-        vertices=round(sortrows(Log.Coor(5:8,:),2));
+        vertices=round(sortrows(Log.CoorList(5:8,:),2));
         TopRowX=sort(linspace(vertices(1,1),vertices(2,1),Log.Cols));
         BotRowX=sort(linspace(vertices(3,1),vertices(4,1),Log.Cols));
         TopRowY=interp1(vertices(1:2,1),vertices(1:2,2),TopRowX);
         BotRowY=interp1(vertices(3:4,1),vertices(3:4,2),BotRowX);
         for j=1:Log.Cols
-            ColYVal=sort(linspace(TopRowY(j),BotRowY(j),Log.NumRow));
+            ColYVal=sort(linspace(TopRowY(j),BotRowY(j),Log.Rows));
             ColXVal=interp1([TopRowY(j) BotRowY(j)],[TopRowX(j) BotRowX(j)],ColYVal);
             Log.CoorBackground=round(vertcat(Log.CoorBackground,[ColXVal' ColYVal']));
         end
         
-        Log.ApproxBackgroundRadius=mean(Log.RadiusSample(5:8));
-        Log.ImageManipulationBackground='Passed';
+        Log.ApproxBackgroundRadius=round(mean(Log.RadiusSample(5:8)));
+        Log.SetCoordinatesBackground='Passed';
     end
     
     %Close GUI

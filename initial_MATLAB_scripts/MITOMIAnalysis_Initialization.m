@@ -50,8 +50,6 @@ function MITOMIAnalysis_Initialization_OpeningFcn(hObject, eventdata, handles, v
 % Choose default command line output for MITOMIAnalysis_GUI
 handles.output = hObject;
 set(handles.edit_output,'String',['MITOMIAnalysis_' datestr(now,30)]);
-global Log
-Log.Initialization=[];
 % Update handles structure
 guidata(hObject, handles);
 
@@ -95,13 +93,13 @@ function pushbutton_continue_Callback(hObject, eventdata, handles)
 
 %Pass data to global workspace for remaining MITOMIAnalysis functions
 global Log
-Log.dir=get(handles.text_directory,'String');
-Log.type=get(get(handles.uibutton_analysisgroup,'SelectedObject'),'String');
-Log.numFrames=str2double(get(handles.text_numframe,'String'));
-Log.nameFrames=get(handles.text_directory,'UserData')';
-Log.background=get(get(handles.uibutton_backgroundgroup,'SelectedObject'),'String');
-Log.lastUpdated=20170129;
-Log.nameOutput=get(handles.edit_output,'String');
+Log.Directory=get(handles.text_directory,'String');
+Log.AnalysisType=get(get(handles.uibutton_analysisgroup,'SelectedObject'),'String');
+Log.RadiusType=get(get(handles.uibutton_radiusgroup,'SelectedObject'),'String');
+Log.NumberFrames=str2double(get(handles.text_numframe,'String'));
+Log.NameFrames=get(handles.text_directory,'UserData')';
+Log.Background=get(get(handles.uibutton_backgroundgroup,'SelectedObject'),'String');
+Log.NameOutput=get(handles.edit_output,'String');
 Log.Initialization='Passed';
 
 %Close GUI

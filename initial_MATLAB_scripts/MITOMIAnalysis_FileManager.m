@@ -51,12 +51,10 @@ function MITOMIAnalysis_FileManager_OpeningFcn(hObject, eventdata, handles, vara
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 % varargin   command line arguments to MITOMIAnalysis_FileManager (see VARARGIN)
-
+global Log
 % Choose default command line output for MITOMIAnalysis_FileManager
 handles.output = hObject;
-global Log
-Log.FileManager=[];
-set(handles.listbox_files,'String',cellstr(Log.nameFrames))
+set(handles.listbox_files,'String',cellstr(Log.NameFrames))
 set(handles.text_order,'String',sprintf('Equilbrium:\n\n1. Background\n    (if included)\n2. Surface Molecule\n    (traditionally protein)\n3. Solubilized Molecule \n    (traditionally DNA) \n\nDissociation:\n\n1. Background\n    (if included)\n2. Surface Molecule\n3. Solubilized Molecule #1\n :\nn. Solubilized Molecule #n \n    (in temporal sequence)'))
 % Update handles structure
 guidata(hObject, handles);
@@ -115,7 +113,7 @@ end
 function pushbutton_Continue_Callback(hObject, eventdata, handles)
 global Log
 Log.FileManager='Passed';
-Log.nameFrames=get(handles.listbox_files,'String');
+Log.NameFrames=get(handles.listbox_files,'String');
 delete(handles.figure_filemanager)
 
 

@@ -30,11 +30,11 @@ try
     AnalysisValidation();
     MITOMIAnalysis_FileManager();
     ImagePrep();
-    MITOMIAnalysis_ImageManipulation(Image.captured(:,:,1),Image);
-    MITOMIAnalysis_SetCoordinates(Image.surface);
+    MITOMIAnalysis_ImageManipulation(Image.Captured(:,:,1),Image);
+    MITOMIAnalysis_SetCoordinates(Image.Surface);
     
-    if sum(sum(Image.background))>0
-        MITOMIAnalysis_SetCoordinates((Image.background+Image.surface)/2);       
+    if sum(sum(Image.Background))>0
+        MITOMIAnalysis_SetCoordinates((Image.Background+Image.Surface)/2);       
     end
     
     DataStructureInitialization();
@@ -46,6 +46,7 @@ try
 catch ME
     
     warning('off','backtrace')
+    abortMITOMI()
     warning(ME.message)
     warning('on','backtrace')
     
@@ -53,7 +54,58 @@ end
 
 %% LOG INITIALIZATION
     function []=LogStructureInitialization()
-        Log.vertex=[];
+        
+        Log.LastUpdated='20170207';
+        Log.Error=[];
+        
+        %Progress check
+        Log.Initialization=[];
+        Log.FileManager=[];
+        Log.ImageManipulation=[];
+        Log.SetCoordinatesSurface=[];
+        Log.SetCoordinatesBackground=[];
+        
+        %Core variables
+        Log.Directory=[];
+        Log.AnalysisType=[];
+        Log.RadiusType=[];
+        Log.Background=[];
+        Log.NumberFrames=[];
+        Log.NameFrames=[];
+        Log.NameOutput=[];
+
+        Log.BackgroundFrame=[];
+        Log.SurfaceFrame=[];
+        Log.CapturedFrames=[];
+        
+        Log.Rows=[];
+        Log.Cols=[];        
+        
+        
+        Log.ApproxGammaSurface=[];
+        Log.ApproxButtonRadius=[];
+        Log.ApproxBackgroundRadius=[];
+        Log.CoorButtons=[]; 
+        Log.CoorBackground=[];
+        
+        Log.SubimageButtonRadius=[];
+        Log.ButtonFGmask=[];
+        Log.ButtonBGmask=[];
+        Log.ButtonTicker=[];
+
+
+        %Internal GUI tracking variables
+        Log.Vertex=[]; 
+        Log.CoorList=[0,0];
+        Log.ImageHolder=[];
+        Log.CurrView=[];
+        Log.MagView=[];
+        Log.ManipulationAPI=[];
+        Log.TempGamma=[];
+        Log.Gamma=[];
+        Log.RadiusSample=[];
+
+        
     end
 
 %% DATA STRUCTURE INITIALIZATION
@@ -74,28 +126,28 @@ end
         Data.ButtonsAreaBG=dimensions;
         Data.AutofindButtons=dimensions;
         
-        Data.surfaceMedianFG=dimensions;
-        Data.surfaceAverageFG=dimensions;
-        Data.surfaceSTDFG=dimensions;
-        Data.surfaceTotalFG=dimensions;
-        Data.surfaceFractionSaturatedFG=dimensions;
-        Data.surfaceMedianBG=dimensions;
-        Data.surfaceAverageBG=dimensions;
-        Data.surfaceSTDBG=dimensions;
-        Data.surfaceTotalBG=dimensions;
-        Data.surfaceFractionSaturatedBG=dimensions;
+        Data.SurfaceMedianFG=dimensions;
+        Data.SurfaceAverageFG=dimensions;
+        Data.SurfaceSTDFG=dimensions;
+        Data.SurfaceTotalFG=dimensions;
+        Data.SurfaceFractionSaturatedFG=dimensions;
+        Data.SurfaceMedianBG=dimensions;
+        Data.SurfaceAverageBG=dimensions;
+        Data.SurfaceSTDBG=dimensions;
+        Data.SurfaceTotalBG=dimensions;
+        Data.SurfaceFractionSaturatedBG=dimensions;
         
-        Data.capturedMedianFG=dimensions;
-        Data.capturedAverageFG=dimensions;
-        Data.capturedSTDFG=dimensions;
-        Data.capturedTotalFG=dimensions;
-        Data.capturedFractionSaturatedFG=dimensions;
-        Data.capturedMedianBG=dimensions;
-        Data.capturedAverageBG=dimensions;
-        Data.capturedSTDBG=dimensions;
-        Data.capturedTotalBG=dimensions;
-        Data.capturedFractionSaturatedBG=dimensions;
-        
+        Data.CapturedMedianFG=dimensions;
+        Data.CapturedAverageFG=dimensions;
+        Data.CapturedSTDFG=dimensions;
+        Data.CapturedTotalFG=dimensions;
+        Data.CapturedFractionSaturatedFG=dimensions;
+        Data.CapturedMedianBG=dimensions;
+        Data.CapturedAverageBG=dimensions;
+        Data.CapturedSTDBG=dimensions;
+        Data.CapturedTotalBG=dimensions;
+        Data.CapturedFractionSaturatedBG=dimensions;
+       
         Data.ChamberXCoor=dimensions;
         Data.ChamberYCoor=dimensions;
         Data.ChamberRadius=dimensions;
@@ -103,16 +155,17 @@ end
         Data.ChamberAreaBG=dimensions;
         Data.AutofindChamber=dimensions;
         
-        Data.solubilizedMedianFG=dimensions;
-        Data.solubilizedMeanFG=dimensions;
-        Data.solubilizedSTDFG=dimensions;
-        Data.solubilizedTotalFG=dimensions;
-        Data.solubilizedFractionSaturatedFG=dimensions;
-        Data.solubilizedMedianBG=dimensions;
-        Data.solubilizedMeanBG=dimensions;
-        Data.solubilizedSTDBG=dimensions;
-        Data.solubilizedTotalBG=dimensions;
-        Data.solubilizedFractionSaturatedBG=dimensions;
+        Data.SolubilizedMedianFG=dimensions;
+        Data.SolubilizedMeanFG=dimensions;
+        Data.SolubilizedSTDFG=dimensions;
+        Data.SolubilizedTotalFG=dimensions;
+        Data.SolubilizedFractionSaturatedFG=dimensions;
+        Data.SolubilizedMedianBG=dimensions;
+        Data.SolubilizedMeanBG=dimensions;
+        Data.SolubilizedSTDBG=dimensions;
+        Data.SolubilizedTotalBG=dimensions;
+        Data.SolubilizedFractionSaturatedBG=dimensions;
+        
     end
 %% ANALYSIS VALIDATION FUNCTION
     function []=AnalysisValidation()
@@ -122,31 +175,31 @@ end
             assert(~isempty(Log.Initialization),'MITOMIAnalysis:MITOMIAnalysis_Initialization:usrCancel','User cancelled GUI operation');
 
             %Validate passed parameters
-            switch [Log.type Log.background]
+            switch [Log.AnalysisType Log.Background]
 
                 case 'EquilibriumYes'
-                    assert(Log.numFrames==3,'MITOMIAnalysis:ImagePrep:numFrames','Expected 3 frames for equilibrium analysis with background, received %i',Log.numFrames);
-                    Log.bgFrame=1;
-                    Log.surfaceFrame=1;
-                    Log.capturedFrames=1;
+                    assert(Log.NumberFrames==3,'MITOMIAnalysis:ImagePrep:NumberFrames','Expected 3 frames for equilibrium analysis with background, received %i',Log.NumberFrames);
+                    Log.BackgroundFrame=1;
+                    Log.SurfaceFrame=1;
+                    Log.CapturedFrames=1;
 
                 case 'EquilibriumNo'
-                    assert(Log.numFrames==2,'MITOMIAnalysis:ImagePrep:numFrames','Expected 2 frames for equilibrium analysis without background, received %i',Log.numFrames);
-                    Log.bgFrame=[];
-                    Log.surfaceFrame=1;
-                    Log.capturedFrames=1;
+                    assert(Log.NumberFrames==2,'MITOMIAnalysis:ImagePrep:NumberFrames','Expected 2 frames for equilibrium analysis without background, received %i',Log.NumberFrames);
+                    Log.BackgroundFrame=[];
+                    Log.SurfaceFrame=1;
+                    Log.CapturedFrames=1;
 
                 case 'DissociationYes'
-                    assert(Log.numFrames>3,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 3 frames for dissociation analysis with background, received %i',Log.numFrames);
-                    Log.bgFrame=1;
-                    Log.surfaceFrame=1;
-                    Log.capturedFrames=length(Log.nameFrames)-2;
+                    assert(Log.NumberFrames>3,'MITOMIAnalysis:ImagePrep:NumberFrames','Expected more than 3 frames for dissociation analysis with background, received %i',Log.NumberFrames);
+                    Log.BackgroundFrame=1;
+                    Log.SurfaceFrame=1;
+                    Log.CapturedFrames=Log.NumberFrames-2;
 
                 case 'DissociationNo'
-                    assert(Log.numFrames>2,'MITOMIAnalysis:ImagePrep:numFrames','Expected more than 2 frames for dissociation analysis without background, received %i',Log.numFrames);
-                    Log.bgFrame=[];
-                    Log.surfaceFrame=1;
-                    Log.capturedFrames=length(Log.nameFrames)-1;
+                    assert(Log.NumberFrames>2,'MITOMIAnalysis:ImagePrep:NumberFrames','Expected more than 2 frames for dissociation analysis without background, received %i',Log.NumberFrames);
+                    Log.BackgroundFrame=[];
+                    Log.SurfaceFrame=1;
+                    Log.CapturedFrames=Log.NumberFrames-1;
 
             end
 
@@ -162,23 +215,28 @@ end
 %% IMAGEPREP FUNCTION
     function []=ImagePrep()
     
+        %Initialize image structure
+        Image.Background=[];
+        Image.Surface=[];
+        Image.Captured=[];
+        
         try
             %Check to see if GUI stage passed parameters
             assert(~isempty(Log.FileManager),'MITOMIAnalysis:MITOMIAnalysis_FileManager:usrCancel','User cancelled GUI operation');
 
             %Load images and update waitbar
-            WAIT=waitbar(0,'Loading images into MATLAB...','Name','Fraction Complete: ','CreateCancelBtn','setappdata(gcbf,''canceling'',1);');
+            WAIT=waitbar(0,'Loading images into MATLAB...','Name','Loading Images ','CreateCancelBtn','setappdata(gcbf,''canceling'',1);');
             setappdata(WAIT,'canceling',0);
-            waitbar(0/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',0,Log.numFrames));
+            waitbar(0/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',0,Log.NumberFrames));
 
-            Image.background=imread(Log.nameFrames{Log.bgFrame});
-            bgFilled=~isempty(Image.background);
-            waitbar(bgFilled/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',bgFilled,Log.numFrames));
+            Image.Background=imread(Log.NameFrames{Log.BackgroundFrame});
+            bgFilled=~isempty(Image.Background);
+            waitbar(bgFilled/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',bgFilled,Log.NumberFrames));
 
-            Image.surface=imread(Log.nameFrames{~isempty(Log.bgFrame) + Log.surfaceFrame});
-            waitbar((bgFilled+1)/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',bgFilled+1,Log.numFrames));
+            Image.Surface=imread(Log.NameFrames{~isempty(Log.BackgroundFrame) + Log.SurfaceFrame});
+            waitbar((bgFilled+1)/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',bgFilled+1,Log.NumberFrames));
 
-            for i = (bgFilled+Log.surfaceFrame+1):(bgFilled+Log.surfaceFrame+Log.capturedFrames)
+            for i = (bgFilled+Log.SurfaceFrame+1):(bgFilled+Log.SurfaceFrame+Log.CapturedFrames)
 
                 %Check to see if cancel button has been pressed, throw error
                 if isequal(getappdata(WAIT,'canceling'),1)
@@ -186,25 +244,25 @@ end
                     assert(false,'MITOMIAnalysis:ImagePrep:waitCancel','User cancelled image loading operation');
                 end
 
-                Image.captured(:,:,i-bgFilled-Log.surfaceFrame)=imread(Log.nameFrames{i});
-                waitbar(i/Log.numFrames,WAIT,sprintf('Images loaded: %i / %i',i,Log.numFrames));
+                Image.Captured(:,:,i-bgFilled-Log.SurfaceFrame)=imread(Log.NameFrames{i});
+                waitbar(i/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',i,Log.NumberFrames));
             end
 
             delete(WAIT);
 
             %Check to see if all images are the same dimension
-            dimSurface=size(Image.surface);
+            dimSurface=size(Image.Surface);
             if bgFilled
-                assert(isequal(dimSurface,size(Image.captured(:,:,1)),size(Image.background)),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
+                assert(isequal(dimSurface,size(Image.Captured(:,:,1)),size(Image.Background)),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
             else
-                assert(isequal(dimSurface,size(Image.captured(:,:,1))),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
-                Image.background=zeros(dimSurface);
+                assert(isequal(dimSurface,size(Image.Captured(:,:,1))),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
+                Image.Background=zeros(dimSurface);
             end
 
             %Scale image size to prevent Matlab from crashing when disp large image  
-            Image.background=imresize(Image.background,7500/min(dimSurface));
-            Image.surface=imresize(Image.surface,7500/min(dimSurface));
-            Image.captured=imresize(Image.captured,7500/min(dimSurface));
+            Image.Background=imresize(Image.Background,7500/min(dimSurface));
+            Image.Surface=imresize(Image.Surface,7500/min(dimSurface));
+            Image.Captured=imresize(Image.Captured,7500/min(dimSurface));
 
         catch ME
 
@@ -215,133 +273,88 @@ end
         end
     end
 
-%% SET COORDINATES FUNCTION
-    function []=SetCoordinates()
-        %Define grids for automated analysis
-
-        %Reorganize coordinate data collected
-        Log.approxIntensity=mean(IntensitySample);
-        Log.Radius=ceil(mean(RadiusSample));        
-        vertices=round(sortrows(CornerCoor,2));
-        
-        verticesSolubilized=round(sortrows(SolubilizedCornerCoor,2));
-        Log.RadiusSolubilized=ceil(mean(SolubilizedRadiusSample));
-        Log.approxIntensitySolubilized=max(SolubilizedIntSample);
-        
-        TopRowXButtons=sort(linspace(vertices(1,1),vertices(2,1),Log.NumCol));
-        BotRowXButtons=sort(linspace(vertices(3,1),vertices(4,1),Log.NumCol));
-        TopRowYButtons=interp1(vertices(1:2,1),vertices(1:2,2),TopRowXButtons);
-        BotRowYButtons=interp1(vertices(3:4,1),vertices(3:4,2),BotRowXButtons);
-        
-        TopRowXSolubilized=sort(linspace(verticesSolubilized(1,1),verticesSolubilized(2,1),Log.NumCol));
-        BotRowXSolubilized=sort(linspace(verticesSolubilized(3,1),verticesSolubilized(4,1),Log.NumCol));
-        TopRowYSolubilized=interp1(verticesSolubilized(1:2,1),verticesSolubilized(1:2,2),TopRowXSolubilized);
-        BotRowYSolubilized=interp1(verticesSolubilized(3:4,1),verticesSolubilized(3:4,2),BotRowXSolubilized);
-
-        %Generate grid from coordinate data
-        for j=1:Log.NumCol
-            ColYValButtons=sort(linspace(TopRowYButtons(j),BotRowYButtons(j),Log.NumRow));
-            ColXValButtons=interp1([TopRowYButtons(j) BotRowYButtons(j)],[TopRowXButtons(j) BotRowXButtons(j)],ColYValButtons);
-            Log.CoorButtons=round(vertcat(Log.CoorButtons,[ColXValButtons' ColYValButtons']));
-            
-            ColYValSolubilized=sort(linspace(TopRowYSolubilized(j),BotRowYSolubilized(j),Log.NumRow));
-            ColXValSolubilized=interp1([TopRowYSolubilized(j) BotRowYSolubilized(j)],[TopRowXSolubilized(j) BotRowXSolubilized(j)],ColYValSolubilized);
-            Log.CoorChamber=round(vertcat(Log.CoorChamber,[ColXValSolubilized' ColYValSolubilized']));
-        end
-        
-        warning('ON')
-        disp('Approximate coordinates for automatation set.')
-    end
-
 %% AUTOMATED FEATURE FINDING FUNCTION
     function []=AutomatedFeatureFinding()
        
-        %Adjust radii for mask-making
-        Log.modRadiusButton=Log.Radius+round(Log.Radius/2);
+        %Adjust radii for subimage mask-making
+        Log.SubimageButtonRadius=Log.ApproxButtonRadius+round(Log.ApproxButtonRadius/2);
+
+        %Masks dimensions for surface image
+        buttonFGmask=zeros(Log.SubimageButtonRadius*2);
+        buttonBGmask=zeros(Log.SubimageButtonRadius*2);
         
-        buttonFGmask=zeros(Log.modRadiusButton*2);
-        buttonBGmask=zeros(Log.modRadiusButton*2);
-        for k=1:Log.modRadiusButton*2
-            for l=1:Log.modRadiusButton*2
-                if lt((k-(Log.modRadiusButton*2+1)/2)^2+(l-(Log.modRadiusButton*2+1)/2)^2,(Log.modRadiusButton/2)^2)
-                    buttonFGmask(k,l)=1;
+        %Generate FG and BG masks
+        for i=1:Log.SubimageButtonRadius*2
+            for j=1:Log.SubimageButtonRadius*2
+                
+                if lt((i-(Log.SubimageButtonRadius*2+1)/2)^2+(j-(Log.SubimageButtonRadius*2+1)/2)^2,(Log.SubimageButtonRadius/2)^2)
+                    buttonFGmask(i,j)=1;
                 else
-                    buttonFGmask(k,l)=0;
+                    buttonFGmask(i,j)=0;
                 end
-                if lt((k-(Log.modRadiusButton*2+1)/2)^2+(l-(Log.modRadiusButton*2+1)/2)^2,(Log.modRadiusButton*2/2)^2) && gt((k-(Log.modRadiusButton*2+1)/2)^2+(l-(Log.modRadiusButton*2+1)/2)^2,(Log.modRadiusButton*1.5/2)^2)
-                    buttonBGmask(k,l)=1;
+                
+                if lt((i-(Log.SubimageButtonRadius*2+1)/2)^2+(j-(Log.SubimageButtonRadius*2+1)/2)^2,(Log.SubimageButtonRadius*2/2)^2) && gt((i-(Log.SubimageButtonRadius*2+1)/2)^2+(j-(Log.SubimageButtonRadius*2+1)/2)^2,(Log.SubimageButtonRadius*1.5/2)^2)
+                    buttonBGmask(i,j)=1;
                 else
-                    buttonBGmask(k,l)=0;
+                    buttonBGmask(i,j)=0;
                 end
+                
             end
         end
         
-        solubilizedFGmask=zeros(Log.RadiusSolubilized*2);
-        for p=1:Log.RadiusSolubilized*2
-            for q=1:Log.RadiusSolubilized*2
-                if lt((p-(Log.RadiusSolubilized*2+1)/2)^2+(q-(Log.RadiusSolubilized*2+1)/2)^2,Log.RadiusSolubilized^2)
-                    solubilizedFGmask(p,q)=1;
-                end
-            end
-        end
-        
-        Log.buttonFGmask=buttonFGmask;
-        Log.buttonBGmask=buttonBGmask;
-        Log.solubilizedFGmask=solubilizedFGmask;
-        
-        %Preset variables
-        Log.BTicker=0;
-        Log.CTicker=0;
-
-
-        disp('Variables defined. Beginning automated identification of buttons...')
+        %Save button masks and generate autofind counter
+        Log.ButtonFGmask=buttonFGmask;
+        Log.ButtonBGmask=buttonBGmask;
+        Log.ButtonTicker=0;
+        buttonRadius=zeros(length(Data.Index),1);
         
         figButtonGrid=figure('menubar','none','numbertitle','off','toolbar','none','Name','Button Preview');
-        WAIT=waitbar(0,'Processing button positions...','Name','Button Positions');
+        WAIT=waitbar(0,'Processing button positions...','Name','Finding Buttons');
         
-        for m=1:length(dimensions);
+        for m=1:length(Data.Index); %For each point in the array
             
-            %Fill in data identity
-            Data.ColIndex(m)=ceil(m/Log.NumRow);
-            Data.RowIndex(m)=m-Log.NumRow*(Data.ColIndex(m)-1);
-            Data.ButtonsRadius(m,1)=Log.Radius;
-
+            %Fill in spot identity
+            Data.ColIndex(m)=ceil(m/Log.Rows);
+            Data.RowIndex(m)=m-Log.Rows*(Data.ColIndex(m)-1);
+            
+            %Set approximate X and Y coordinates
             CoorX=Log.CoorButtons(m,1);
             CoorY=Log.CoorButtons(m,2);
             
-            %Adjust image intensities and find surface bound spot within 1
-            %radius of XY coordinates with slight deviation from defined R
-            
-            screenSurface=double(Image.surface((CoorY-2*Log.modRadiusButton):(CoorY+2*Log.modRadiusButton),(CoorX-2*Log.modRadiusButton):(CoorX+2*Log.modRadiusButton)));
-            screenSTD=std(screenSurface(:));
-            screenMED=median(screenSurface(:));
-            screenSurfaceMod=imadjust(uint16(mat2gray(screenSurface,[screenMED-screenSTD*2 Log.approxIntensity+screenSTD*2])*65535));
-            [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(Log.modRadiusButton/2.5) round(Log.modRadiusButton/1.25)],'ObjectPolarity','bright');
+            %Generate subimage and adjust contrast
+            screenSurface=double(Image.Surface((CoorY-2*Log.SubimageButtonRadius):(CoorY+2*Log.SubimageButtonRadius),(CoorX-2*Log.SubimageButtonRadius):(CoorX+2*Log.SubimageButtonRadius)));
+            screenSurfaceMod=imadjust(screenSurface,[],[],Log.ApproxGammaSurface);
             imshow(screenSurfaceMod)
             
-            %if autofind with hough transform finds something, process info
-            if isempty(radii)~=1
+            %Apply Hough transform to find button
+            [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(Log.SubimageButtonRadius/2.5) round(Log.SubimageButtonRadius/1.25)],'ObjectPolarity','bright');
+            
+            if isempty(radii)~=1 %If autofind with hough transform detects something, process it
+                
                 %Convert local coordinates to global coordinates
-                Data.ButtonsXCoor(m,1)=round(spotLocations(1,1)-Log.modRadiusButton*2-1+CoorX);
-                Data.ButtonsYCoor(m,1)=round(spotLocations(1,2)-Log.modRadiusButton*2-1+CoorY);
+                Data.ButtonsXCoor(m,1)=round(spotLocations(1,1)-Log.SubimageButtonRadius*2-1+CoorX);
+                Data.ButtonsYCoor(m,1)=round(spotLocations(1,2)-Log.SubimageButtonRadius*2-1+CoorY);
                 Data.Remove(m)=false;
                 Data.AutofindButtons(m)=true;
+                buttonRadius(m,1)=radii(1);
                 
-                Log.BTicker=Log.BTicker+1;
+                %Increment button autofind ticker
+                Log.ButtonTicker=Log.ButtonTicker+1;
                 
-            else %Autofind failed, try to find where button is
-                surfaceFGdataholder=cell(length(Log.modRadiusButton*4+1));
-                surfaceBGdataholder=cell(length(Log.modRadiusButton*4+1));
-                Data.ButtonsRadius(m,1)=Log.Radius;
-
-                %Sample data in the phase space
-                for n=(CoorX-Log.modRadiusButton*2):(CoorX+Log.modRadiusButton*2)
-                    for o=(CoorY-Log.modRadiusButton*2):(CoorY+Log.modRadiusButton*2)
-                        ExtractImageSurface=double(Image.surface((o-Log.modRadiusButton):(o+Log.modRadiusButton-1),(n-Log.modRadiusButton):(n+Log.modRadiusButton-1)));
+            else %Autofind failed, try to find where button is with a scan
+                surfaceFGdataholder=cell(length(Log.SubimageButtonRadius*4+1));
+                surfaceBGdataholder=cell(length(Log.SubimageButtonRadius*4+1));
+                
+                %Generate map of net local intensities for subimage
+                for n=(CoorX-Log.SubimageButtonRadius*2):(CoorX+Log.SubimageButtonRadius*2)
+                    for o=(CoorY-Log.SubimageButtonRadius*2):(CoorY+Log.SubimageButtonRadius*2)
+                        
+                        ExtractImageSurface=double(Image.Surface((o-Log.SubimageButtonRadius):(o+Log.SubimageButtonRadius-1),(n-Log.SubimageButtonRadius):(n+Log.SubimageButtonRadius-1)));
                         surfaceFGsampletemp=ExtractImageSurface.*Log.buttonFGmask;
                         surfaceBGsampletemp=ExtractImageSurface.*Log.buttonBGmask;
-                        surfaceFGdataholder{n+Log.modRadiusButton*2-CoorX+1,o+Log.modRadiusButton*2-CoorY+1}=surfaceFGsampletemp(surfaceFGsampletemp>0);
-                        surfaceBGdataholder{n+Log.modRadiusButton*2-CoorX+1,o+Log.modRadiusButton*2-CoorY+1}=surfaceBGsampletemp(surfaceBGsampletemp>0);
+                        surfaceFGdataholder{n+Log.SubimageButtonRadius*2-CoorX+1,o+Log.SubimageButtonRadius*2-CoorY+1}=surfaceFGsampletemp(surfaceFGsampletemp>0);
+                        surfaceBGdataholder{n+Log.SubimageButtonRadius*2-CoorX+1,o+Log.SubimageButtonRadius*2-CoorY+1}=surfaceBGsampletemp(surfaceBGsampletemp>0);
+                        
                     end
                 end
                 
@@ -349,58 +362,87 @@ end
                 NetInt=cellfun(@(x,y) (sum(x)-sum(y)),surfaceFGdataholder,surfaceBGdataholder);
                 [n_local,o_local]=find(NetInt==max(NetInt(:)));
 
-                %Convert "best data" local coor into global for capt image
-                Data.ButtonsXCoor(m)=n_local-1+CoorX-Log.modRadiusButton*2;
-                Data.ButtonsYCoor(m)=o_local-1+CoorY-Log.modRadiusButton*2;   
+                %Convert "best data" local coor into global for surface image
+                Data.ButtonsXCoor(m)=n_local-1+CoorX-Log.SubimageButtonRadius*2;
+                Data.ButtonsYCoor(m)=o_local-1+CoorY-Log.SubimageButtonRadius*2;   
                 Data.Remove(m)=false;
                 Data.AutofindButtons(m)=false;
-                
+                buttonRadius(m)=Log.ApproxButtonRadius;
+               
             end
-            waitbar(m/length(dimensions));
+            waitbar(m/length(Data.Index));
         end
+        
         close(figButtonGrid)
         delete(WAIT)
-        disp(['Buttons identified with automation: ' num2str(Log.BTicker) ' out of ' num2str(length(dimensions))])            
-        disp('Beginning automated identification of chambers...')
-            
+        
+        %Set button radius length
+        if ~strcmp(Log.RadiusType,'Fixed')
+            Data.ButtonRadius(:,1)=buttonRadius(:);
+        else
+            Data.ButtonRadius(:,1)=Log.ApproxButtonRadius;
+        end
+        
+        %Display quality of autofind for buttons
+        buttonMSGBOX=msgbox(['Buttons identified with automation: ' num2str(Log.buttonTicker) ' out of ' num2str(length(Data.Index))],'Button Detection Complete');            
+        
+        solubilizedFGmask=zeros(Log.RadiusSolubilized*2);
+        solubilizedBGmask=ones(Log.RadiusSolubilized*2);
+        
+        %Generate 
+        for p=1:Log.ApproxBackgroundRadius*2
+            for q=1:Log.ApproxBackgroundRadius*2
+                if lt((p-(Log.ApproxBackgroundRadius*2+1)/2)^2+(q-(Log.ApproxBackgroundRadius*2+1)/2)^2,Log.ApproxBackgroundRadius^2)
+                    solubilizedFGmask(p,q)=1;
+                end
+            end
+        end
+
+        Log.solubilizedFGmask=solubilizedFGmask;
+        Log.solubilizedBGmask=solubilizedBGmask-solubilizedFGmask;
+        
+        %Preset variables
+        Log.CTicker=0;            
 
         figChamberGrid=figure('menubar','none','numbertitle','off','toolbar','none','Name','Chamber Preview');
         WAIT=waitbar(0,'Processing chamber positions...','Name','Chamber Positions');
 
-        for r=1:length(dimensions)
+        for n=1:length(Data.Index)
 
             %Refresh coordinates with chamber positions
-            CoorX=Log.CoorChamber(r,1);
-            CoorY=Log.CoorChamber(r,2);
-            Data.ChamberRadius(r,1)=Log.RadiusSolubilized;
+            CoorX=Log.CoorBackground(n,1);
+            CoorY=Log.CoorBackground(n,2);
+            Data.ChamberRadius(n,1)=Log.ApproxBackgoundRadius;
 
-            %Adjust image intensities and find where chamber might be
-            screenSol=double(Image.solubilized((CoorY-Log.RadiusSolubilized):(CoorY+Log.RadiusSolubilized),(CoorX-Log.RadiusSolubilized):(CoorX+Log.RadiusSolubilized),1));
+            %Generate subimage and adjust contrast
+            screenSol=double(Image.Background((CoorY-Log.ApproxBackgroundRadius):(CoorY+Log.ApproxBackgroundRadius),(CoorX-Log.ApproxBackgroundRadius):(CoorX+Log.ApproxBackgroundRadius),1));
             screenSolSTD=std(screenSol(:));
             screenSolMED=median(screenSol(:));
-            screenSolMod=imadjust(uint16(mat2gray(screenSol,[screenSolMED-screenSolSTD*2 Log.approxIntensitySolubilized+screenSolSTD*2])*65535));
-            [chamberLocations,chamberradii]=imfindcircles((screenSolMod),[round(Log.RadiusSolubilized*.80) round(Log.RadiusSolubilized*1.2)],'ObjectPolarity','bright');
+            screenSolMod=imadjust(uint16(mat2gray(screenSol,[screenSolMED-screenSolSTD*2, screenSolMED+screenSolSTD*2])*65535));
             imshow(screenSolMod)
+            
+            %Apply Hough transform to identify chamber
+            [chamberLocations,chamberradii]=imfindcircles((screenSolMod),[round(Log.ApproxBackgroundRadius*.80) round(Log.ApproxBackgroundRadius*1.2)],'ObjectPolarity','bright');
 
-            %if autofind with hough transform finds something, process 
-            if isempty(chamberradii)~=1
+            if isempty(chamberradii)~=1 %if autofind with hough transform finds something, process 
+                
                 %Convert local coordinates to global coordinates
-                Data.ChamberXCoor(r)=round(chamberLocations(1,1)-Log.RadiusSolubilized-1+CoorX);
-                Data.ChamberYCoor(r)=round(chamberLocations(1,2)-Log.RadiusSolubilized-1+CoorY);
-                Data.AutofindChamber(r)=true;
+                Data.ChamberXCoor(n)=round(chamberLocations(1,1)-Log.ApproxBackgroundRadius-1+CoorX);
+                Data.ChamberYCoor(n)=round(chamberLocations(1,2)-Log.ApproxBackgroundRadius-1+CoorY);
+                Data.AutofindChamber(n)=true;
 
                 Log.CTicker=Log.CTicker+1;
 
-            else %autofind failed: try, to, find... chamber. so slow.
+            else %autofind failed
 
-                solubilizedFGdataholder=cell(length(Log.RadiusSolubilized*2+1));
+                solubilizedFGdataholder=cell(length(Log.ApproxBackgroundRadius*2+1));
 
-                %sample data for the phase space about the coor
-                for s=(CoorX-ceil(Log.RadiusSolubilized*7/8)):(CoorX+floor((Log.RadiusSolubilized-1)*7/8))
-                    for t=(CoorY-ceil(Log.RadiusSolubilized*7/8)):(CoorY+floor((Log.RadiusSolubilized-1)*7/8))
-                        ExtractImageSolubilized=double(Image.solubilized((t-Log.RadiusSolubilized):(t+Log.RadiusSolubilized-1),(s-Log.RadiusSolubilized):(s+Log.RadiusSolubilized-1),1));
+                %Generate map of net local intensities for subimage
+                for s=(CoorX-ceil(Log.ApproxBackgroundRadius*7/8)):(CoorX+floor((Log.ApproxBackgroundRadius-1)*7/8))
+                    for t=(CoorY-ceil(Log.ApproxBackgroundRadius*7/8)):(CoorY+floor((Log.ApproxBackgroundRadius-1)*7/8))
+                        ExtractImageSolubilized=double(Image.Background((t-Log.ApproxBackgroundRadius):(t+Log.ApproxBackgroundRadius-1),(s-Log.ApproxBackgroundRadius):(s+Log.ApproxBackgroundRadius-1),1));
                         solubilizedFGsampletemp=ExtractImageSolubilized.*Log.solubilizedFGmask;
-                        solubilizedFGdataholder{s+Log.RadiusSolubilized-CoorX+1,t+Log.RadiusSolubilized-CoorY+1}=solubilizedFGsampletemp(solubilizedFGsampletemp>0);                             
+                        solubilizedFGdataholder{s+Log.ApproxBackgroundRadius-CoorX+1,t+Log.ApproxBackgroundRadius-CoorY+1}=solubilizedFGsampletemp(solubilizedFGsampletemp>0);                             
                     end
                 end
 
@@ -409,18 +451,30 @@ end
                 [s_local,t_local]=find(TotInt==max(TotInt(:)));
 
                 %Convert "best data" local coor into global for capt image
-                Data.ChamberXCoor(r)=s_local(1)-1+CoorX-Log.RadiusSolubilized;
-                Data.ChamberYCoor(r)=t_local(1)-1+CoorY-Log.RadiusSolubilized;
-                Data.AutofindChamber(r)=false;
+                Data.ChamberXCoor(n)=s_local(1)-1+CoorX-Log.ApproxBackgroundRadius;
+                Data.ChamberYCoor(n)=t_local(1)-1+CoorY-Log.ApproxBackgroundRadius;
+                Data.AutofindChamber(n)=false;
             end
 
-            waitbar(r/length(dimensions));
+            waitbar(n/length(Data.Index));
 
         end
+        
         close(figChamberGrid)
         delete(WAIT)
-        disp(['Chambers identified with automation: ' num2str(Log.CTicker) ' out of ' num2str(length(dimensions))])
-save('test.mat')
+        
+        backgroundMSGBOX=msgbox(['Chambers identified with automation: ' num2str(Log.CTicker) ' out of ' num2str(length(Data.Index))],'Background Detection Complete');
+        
+        pause(3.0)
+        
+        %Close figures if they remain open
+        if ishandle(buttonMSGBOX)
+            close(buttonMSGBOX)
+        end
+        
+        if ishandle(backgroundMSGBOX)
+            close(backgroundMSGBOX)
+        end
     end
 %% USER EDIT FUNCTION
     function [Data,L,ABORT]=UserEdit(Image,Data,L)
@@ -686,12 +740,12 @@ save('test.mat')
         L.NumSamples=sum(~Data.Remove);
         WAIT=waitbar(0,'Extracting data from positions...','Name','Data Extraction Percent Complete: ');
         disp('Extracting data from positions...')
-        window=4*L.RadiusSolubilized+1;
+        window=4*L.ApproxBackgroundRadius+1;
         [MaskX,MaskY]=meshgrid(1:window,1:window);
         
         %Masks are made such that button is always centered
         %Chamber is then inserted into mask relative to button coordinates
-        ButtonMask=uint16(sqrt((MaskX-(2*L.RadiusSolubilized+1)).^2+(MaskY-(2*L.RadiusSolubilized+1)).^2)<=L.Radius*.9);
+        ButtonMask=uint16(sqrt((MaskX-(2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(2*L.ApproxBackgroundRadius+1)).^2)<=L.Radius*.9);
         
         for W=1:L.NumWells
             index=index+double(~Data.Remove(W));
@@ -700,8 +754,8 @@ save('test.mat')
             end
             
             %Generate masks for data extraction
-            ChamberBGMask =       uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.RadiusSolubilized+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.RadiusSolubilized+1)).^2)>=L.RadiusSolubilized*1.1 & sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.RadiusSolubilized+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.RadiusSolubilized+1)).^2)<=L.RadiusSolubilized*1.3 );
-            ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.RadiusSolubilized+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.RadiusSolubilized+1)).^2)<=L.RadiusSolubilized &~ sqrt((MaskX-(2*L.RadiusSolubilized+1)).^2+(MaskY-(2*L.RadiusSolubilized+1)).^2)<=L.Radius*1.1 );
+            ChamberBGMask =       uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius+1)).^2)>=L.ApproxBackgroundRadius*1.1 & sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius+1)).^2)<=L.ApproxBackgroundRadius*1.3 );
+            ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius+1)).^2)<=L.ApproxBackgroundRadius &~ sqrt((MaskX-(2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(2*L.ApproxBackgroundRadius+1)).^2)<=L.Radius*1.1 );
             Data.ButtonsAreaFG(W)=sum(sum(ButtonMask));
             Data.ButtonsAreaBG(W)=sum(sum(ChamberNoButtonMask));
             Data.ChamberAreaFG(W)=sum(sum(ChamberNoButtonMask));
@@ -710,7 +764,7 @@ save('test.mat')
             %Collect data from solubilized chambers
             for frameS=1:L.numsolframes
                 
-                imageS=Image.solubilized((Data.ButtonsYCoor(W)-2*L.RadiusSolubilized):(Data.ButtonsYCoor(W)+2*L.RadiusSolubilized),(Data.ButtonsXCoor(W)-2*L.RadiusSolubilized):(Data.ButtonsXCoor(W)+2*L.RadiusSolubilized),frameS);
+                imageS=Image.solubilized((Data.ButtonsYCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius),frameS);
                 DNAChamber = double(imageS.*ChamberNoButtonMask);
                 DNAChamberBG = double(imageS.*ChamberBGMask);
 
@@ -728,7 +782,7 @@ save('test.mat')
             end
             
             %Collect data from surface immobilized molecules
-            imageB=Image.surface((Data.ButtonsYCoor(W)-2*L.RadiusSolubilized):(Data.ButtonsYCoor(W)+2*L.RadiusSolubilized),(Data.ButtonsXCoor(W)-2*L.RadiusSolubilized):(Data.ButtonsXCoor(W)+2*L.RadiusSolubilized));
+            imageB=Image.surface((Data.ButtonsYCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius));
             SurfaceButton=double(imageB.*ButtonMask);
             SurfaceBG=double(imageB.*ChamberNoButtonMask);
             
@@ -746,7 +800,7 @@ save('test.mat')
             %Collect data from captured molecule images
             for frameC=1:L.numboundframes
                 
-                imageC=Image.captured((Data.ButtonsYCoor(W)-2*L.RadiusSolubilized):(Data.ButtonsYCoor(W)+2*L.RadiusSolubilized),(Data.ButtonsXCoor(W)-2*L.RadiusSolubilized):(Data.ButtonsXCoor(W)+2*L.RadiusSolubilized),frameC);
+                imageC=Image.captured((Data.ButtonsYCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius),frameC);
                 CapturedButton=double(imageC.*ButtonMask);
                 CapturedBG=double(imageC.*ChamberNoButtonMask);
                 
@@ -832,6 +886,7 @@ save('test.mat')
 function []=abortMITOMI()
 
     if ~strcmp(ME.identifier,'MITOMIAnalysis:MITOMIAnalysis_Initialization:usrCancel')
+        Log.ImageHolder='Images not saved';
         LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
         save(LOGFILENAME,'Log')
         disp('Log file saved.')

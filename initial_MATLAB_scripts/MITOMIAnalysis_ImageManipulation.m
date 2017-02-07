@@ -51,7 +51,7 @@ function MITOMIAnalysis_ImageManipulation_OpeningFcn(hObject, eventdata, handles
 global Log
 Log.Manipulation=[];
 handles.output = hObject;
-set(handles.uipanel_image,'UserData',varargin{1});
+set(handles.uipanel_image,'UserData',mat2gray(varargin{1}));
 set(handles.figure_manipulation,'UserData',varargin{2});
 set(handles.text_directions,'String',sprintf('Directions:\nReorient the image such that chamber #1 is on the top left and chamber #2 is directly below that.\n\nAlso, set the dimensions of the array in the text boxes below'))
 guidata(hObject, handles);
@@ -74,8 +74,8 @@ Log.Rows=str2num(get(handles.edit_col,'String'));
 Log.Cols=str2num(get(handles.edit_row,'String'));
 
 try
-    assert(Log.rows>0 && rem(Log.rows,1),'MITOMIAnalysis:ImageManipulation:rowValue','Row value declared was not an integer greater than 0');
-    assert(Log.cols>0 && rem(Log.cols,1),'MITOIMAnalysis:ImageManipulation:colValue','Column value declared was not an integer greater than 0');
+    assert(Log.Rows>0 && rem(Log.Rows,1),'MITOMIAnalysis:ImageManipulation:rowValue','Row value declared was not an integer greater than 0');
+    assert(Log.Cols>0 && rem(Log.Cols,1),'MITOIMAnalysis:ImageManipulation:colValue','Column value declared was not an integer greater than 0');
 catch
     delete(handles.figure_manipulation)
 end
