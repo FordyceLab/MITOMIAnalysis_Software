@@ -33,13 +33,13 @@ try
     MITOMIAnalysis_ImageManipulation(Image.Captured(:,:,1),Image);
     MITOMIAnalysis_SetCoordinates(Image.Surface);
     
-    if sum(sum(Image.Background))>0
+    if ~isempty(Log.BackgroundFrame)
         MITOMIAnalysis_SetCoordinates((Image.Background+Image.Surface)/2);       
     end
     
     DataStructureInitialization();
     AutomatedFeatureFinding();
-    UserEdit();
+    MITOMIAnalysis_UserEdit(Image,Data);
     CompileData();
     fprintMITOMI();
     
@@ -64,6 +64,11 @@ end
         Log.ImageManipulation=[];
         Log.SetCoordinatesSurface=[];
         Log.SetCoordinatesBackground=[];
+        Log.SurfaceFeatureFinding=[];
+        Log.BackgroundFeatureFinding=[];
+        Log.SurfaceFeatureEvaluation=[];
+        Log.CapturedFeatureEvaluation=[];
+        Log.BackgroundFeatureEvaluation=[];
         
         %Core variables
         Log.Directory=[];
@@ -93,9 +98,12 @@ end
         Log.ButtonBGmask=[];
         Log.ButtonTicker=[];
 
-
+        Log.SolubilizedFGmask=[];
+        Log.SolubilizedBGmask=[];
+        Log.BackgroundTicker=[];
+        
         %Internal GUI tracking variables
-        Log.Vertex=[]; 
+        Log.Vertex=0; 
         Log.CoorList=[0,0];
         Log.ImageHolder=[];
         Log.CurrView=[];
@@ -276,6 +284,9 @@ end
 %% AUTOMATED FEATURE FINDING FUNCTION
     function []=AutomatedFeatureFinding()
        
+        buttonMSGBOX=[];
+        backgroundMSGBOX=[];
+        
         %Adjust radii for subimage mask-making
         Log.SubimageButtonRadius=Log.ApproxButtonRadius+round(Log.ApproxButtonRadius/2);
 
@@ -322,14 +333,16 @@ end
             CoorY=Log.CoorButtons(m,2);
             
             %Generate subimage and adjust contrast
-            screenSurface=double(Image.Surface((CoorY-2*Log.SubimageButtonRadius):(CoorY+2*Log.SubimageButtonRadius),(CoorX-2*Log.SubimageButtonRadius):(CoorX+2*Log.SubimageButtonRadius)));
+            screenSurface=uint16(Image.Surface((CoorY-2*Log.SubimageButtonRadius):(CoorY+2*Log.SubimageButtonRadius),(CoorX-2*Log.SubimageButtonRadius):(CoorX+2*Log.SubimageButtonRadius)));
             screenSurfaceMod=imadjust(screenSurface,[],[],Log.ApproxGammaSurface);
-            imshow(screenSurfaceMod)
+            imshow(mat2gray(screenSurfaceMod))
             
             %Apply Hough transform to find button
+            warning('OFF','all') %suppress small radius warning
             [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(Log.SubimageButtonRadius/2.5) round(Log.SubimageButtonRadius/1.25)],'ObjectPolarity','bright');
+            warning('ON','all')
             
-            if isempty(radii)~=1 %If autofind with hough transform detects something, process it
+            if ~isempty(radii) %If autofind with hough transform detects something, process it
                 
                 %Convert local coordinates to global coordinates
                 Data.ButtonsXCoor(m,1)=round(spotLocations(1,1)-Log.SubimageButtonRadius*2-1+CoorX);
@@ -350,8 +363,8 @@ end
                     for o=(CoorY-Log.SubimageButtonRadius*2):(CoorY+Log.SubimageButtonRadius*2)
                         
                         ExtractImageSurface=double(Image.Surface((o-Log.SubimageButtonRadius):(o+Log.SubimageButtonRadius-1),(n-Log.SubimageButtonRadius):(n+Log.SubimageButtonRadius-1)));
-                        surfaceFGsampletemp=ExtractImageSurface.*Log.buttonFGmask;
-                        surfaceBGsampletemp=ExtractImageSurface.*Log.buttonBGmask;
+                        surfaceFGsampletemp=ExtractImageSurface.*Log.ButtonFGmask;
+                        surfaceBGsampletemp=ExtractImageSurface.*Log.ButtonBGmask;
                         surfaceFGdataholder{n+Log.SubimageButtonRadius*2-CoorX+1,o+Log.SubimageButtonRadius*2-CoorY+1}=surfaceFGsampletemp(surfaceFGsampletemp>0);
                         surfaceBGdataholder{n+Log.SubimageButtonRadius*2-CoorX+1,o+Log.SubimageButtonRadius*2-CoorY+1}=surfaceBGsampletemp(surfaceBGsampletemp>0);
                         
@@ -380,14 +393,14 @@ end
         if ~strcmp(Log.RadiusType,'Fixed')
             Data.ButtonRadius(:,1)=buttonRadius(:);
         else
-            Data.ButtonRadius(:,1)=Log.ApproxButtonRadius;
+            Data.ButtonsRadius(:,1)=ones(length(Data.Index),1)*Log.ApproxButtonRadius;
         end
         
         %Display quality of autofind for buttons
-        buttonMSGBOX=msgbox(['Buttons identified with automation: ' num2str(Log.buttonTicker) ' out of ' num2str(length(Data.Index))],'Button Detection Complete');            
+        buttonMSGBOX=msgbox(['Buttons identified with automation: ' num2str(Log.ButtonTicker) ' out of ' num2str(length(Data.Index))],'Button Detection Complete');            
         
-        solubilizedFGmask=zeros(Log.RadiusSolubilized*2);
-        solubilizedBGmask=ones(Log.RadiusSolubilized*2);
+        solubilizedFGmask=zeros(Log.ApproxBackgroundRadius*2);
+        solubilizedBGmask=ones(Log.ApproxBackgroundRadius*2);
         
         %Generate 
         for p=1:Log.ApproxBackgroundRadius*2
@@ -398,72 +411,80 @@ end
             end
         end
 
-        Log.solubilizedFGmask=solubilizedFGmask;
-        Log.solubilizedBGmask=solubilizedBGmask-solubilizedFGmask;
-        
-        %Preset variables
-        Log.CTicker=0;            
+        Log.SolubilizedFGmask=solubilizedFGmask;
+        Log.SolubilizedBGmask=solubilizedBGmask-solubilizedFGmask;
+        Log.BackgroundTicker=0;            
 
         figChamberGrid=figure('menubar','none','numbertitle','off','toolbar','none','Name','Chamber Preview');
         WAIT=waitbar(0,'Processing chamber positions...','Name','Chamber Positions');
+        Log.SurfaceFeatureFinding='Passed';
+        
+        if ~isempty(Log.BackgroundFrame)
 
-        for n=1:length(Data.Index)
+            for n=1:length(Data.Index)
 
-            %Refresh coordinates with chamber positions
-            CoorX=Log.CoorBackground(n,1);
-            CoorY=Log.CoorBackground(n,2);
-            Data.ChamberRadius(n,1)=Log.ApproxBackgoundRadius;
+                %Refresh coordinates with chamber positions
+                CoorX=Log.CoorBackground(n,1);
+                CoorY=Log.CoorBackground(n,2);
+                Data.ChamberRadius(n,1)=Log.ApproxBackgroundRadius;
 
-            %Generate subimage and adjust contrast
-            screenSol=double(Image.Background((CoorY-Log.ApproxBackgroundRadius):(CoorY+Log.ApproxBackgroundRadius),(CoorX-Log.ApproxBackgroundRadius):(CoorX+Log.ApproxBackgroundRadius),1));
-            screenSolSTD=std(screenSol(:));
-            screenSolMED=median(screenSol(:));
-            screenSolMod=imadjust(uint16(mat2gray(screenSol,[screenSolMED-screenSolSTD*2, screenSolMED+screenSolSTD*2])*65535));
-            imshow(screenSolMod)
-            
-            %Apply Hough transform to identify chamber
-            [chamberLocations,chamberradii]=imfindcircles((screenSolMod),[round(Log.ApproxBackgroundRadius*.80) round(Log.ApproxBackgroundRadius*1.2)],'ObjectPolarity','bright');
+                %Generate subimage and adjust contrast
+                screenSol=double(Image.Background((CoorY-Log.ApproxBackgroundRadius):(CoorY+Log.ApproxBackgroundRadius),(CoorX-Log.ApproxBackgroundRadius):(CoorX+Log.ApproxBackgroundRadius),1));
+                screenSolSTD=std(screenSol(:));
+                screenSolMED=median(screenSol(:));
+                screenSolMod=imadjust(uint16(mat2gray(screenSol,[screenSolMED-screenSolSTD*2, screenSolMED+screenSolSTD*2])*65535));
+                imshow(screenSolMod)
 
-            if isempty(chamberradii)~=1 %if autofind with hough transform finds something, process 
-                
-                %Convert local coordinates to global coordinates
-                Data.ChamberXCoor(n)=round(chamberLocations(1,1)-Log.ApproxBackgroundRadius-1+CoorX);
-                Data.ChamberYCoor(n)=round(chamberLocations(1,2)-Log.ApproxBackgroundRadius-1+CoorY);
-                Data.AutofindChamber(n)=true;
+                %Apply Hough transform to identify chamber
+                [backgroundLocations,backgroundRadii]=imfindcircles((screenSolMod),[round(Log.ApproxBackgroundRadius*.80) round(Log.ApproxBackgroundRadius*1.2)],'ObjectPolarity','bright');
 
-                Log.CTicker=Log.CTicker+1;
+                if ~isempty(backgroundRadii) %if autofind with hough transform finds something, process 
 
-            else %autofind failed
+                    %Convert local coordinates to global coordinates
+                    Data.ChamberXCoor(n)=round(backgroundLocations(1,1)-Log.ApproxBackgroundRadius-1+CoorX);
+                    Data.ChamberYCoor(n)=round(backgroundLocations(1,2)-Log.ApproxBackgroundRadius-1+CoorY);
+                    Data.AutofindChamber(n)=true;
 
-                solubilizedFGdataholder=cell(length(Log.ApproxBackgroundRadius*2+1));
+                    Log.BackgroundTicker=Log.BackgroundTicker+1;
 
-                %Generate map of net local intensities for subimage
-                for s=(CoorX-ceil(Log.ApproxBackgroundRadius*7/8)):(CoorX+floor((Log.ApproxBackgroundRadius-1)*7/8))
-                    for t=(CoorY-ceil(Log.ApproxBackgroundRadius*7/8)):(CoorY+floor((Log.ApproxBackgroundRadius-1)*7/8))
-                        ExtractImageSolubilized=double(Image.Background((t-Log.ApproxBackgroundRadius):(t+Log.ApproxBackgroundRadius-1),(s-Log.ApproxBackgroundRadius):(s+Log.ApproxBackgroundRadius-1),1));
-                        solubilizedFGsampletemp=ExtractImageSolubilized.*Log.solubilizedFGmask;
-                        solubilizedFGdataholder{s+Log.ApproxBackgroundRadius-CoorX+1,t+Log.ApproxBackgroundRadius-CoorY+1}=solubilizedFGsampletemp(solubilizedFGsampletemp>0);                             
+                else %autofind failed
+                    solubilizedFGdataholder=cell(length(Log.ApproxBackgroundRadius*2+1));
+                    solubilizedBGdataholder=cell(length(Log.ApproxBackgroundRadius*2+1));
+
+                    %Generate map of net local intensities for subimage
+                    for s=(CoorX-ceil(Log.ApproxBackgroundRadius*7/8)):(CoorX+floor((Log.ApproxBackgroundRadius-1)*7/8))
+                        for t=(CoorY-ceil(Log.ApproxBackgroundRadius*7/8)):(CoorY+floor((Log.ApproxBackgroundRadius-1)*7/8))
+                            
+                            ExtractImageSolubilized=double(Image.Background((t-Log.ApproxBackgroundRadius):(t+Log.ApproxBackgroundRadius-1),(s-Log.ApproxBackgroundRadius):(s+Log.ApproxBackgroundRadius-1),1));
+                            solubilizedFGsampletemp=ExtractImageSolubilized.*Log.SolubilizedFGmask;
+                            solubilizedBGsampletemp=ExtractImageSolubilized.*Log.SolubilizedBGmask;
+                            solubilizedFGdataholder{s+Log.ApproxBackgroundRadius-CoorX+1,t+Log.ApproxBackgroundRadius-CoorY+1}=solubilizedFGsampletemp(solubilizedFGsampletemp>0);                             
+                            solubilizedBGdataholder{s+Log.ApproxBackgroundRadius-CoorX+1,t+Log.ApproxBackgroundRadius-CoorY+1}=solubilizedBGsampletemp(solubilizedBGsampletemp>0);                             
+
+                        end
                     end
+
+                    %Find data point w highest net int in phase space datasets
+                    NetInt=cellfun(@(x,y) (sum(x)-sum(y)),solubilizedFGdataholder,solubilizedBGdataholder);
+                    [s_local,t_local]=find(NetInt==max(NetInt(:)));
+
+                    %Convert "best data" local coor into global for capt image
+                    Data.ChamberXCoor(n)=s_local(1)-1+CoorX-Log.ApproxBackgroundRadius;
+                    Data.ChamberYCoor(n)=t_local(1)-1+CoorY-Log.ApproxBackgroundRadius;
+                    Data.AutofindChamber(n)=false;
                 end
 
-                %Find data point w highest net int in phase space datasets
-                TotInt=cellfun(@sum,solubilizedFGdataholder);
-                [s_local,t_local]=find(TotInt==max(TotInt(:)));
+                waitbar(n/length(Data.Index));
 
-                %Convert "best data" local coor into global for capt image
-                Data.ChamberXCoor(n)=s_local(1)-1+CoorX-Log.ApproxBackgroundRadius;
-                Data.ChamberYCoor(n)=t_local(1)-1+CoorY-Log.ApproxBackgroundRadius;
-                Data.AutofindChamber(n)=false;
             end
 
-            waitbar(n/length(Data.Index));
+            close(figChamberGrid)
+            delete(WAIT)
+            
+            Log.BackgroundFeatureFinding='Passed';
 
+            backgroundMSGBOX=msgbox(['Background chambers identified with automation: ' num2str(Log.BackgroundTicker) ' out of ' num2str(length(Data.Index))],'Background Detection Complete');
         end
-        
-        close(figChamberGrid)
-        delete(WAIT)
-        
-        backgroundMSGBOX=msgbox(['Chambers identified with automation: ' num2str(Log.CTicker) ' out of ' num2str(length(Data.Index))],'Background Detection Complete');
         
         pause(3.0)
         
@@ -477,10 +498,10 @@ end
         end
     end
 %% USER EDIT FUNCTION
-    function [Data,L,ABORT]=UserEdit(Image,Data,L)
+    function []=UserEdit()
         
         %Initialize variables
-        ImPreviewButtons=((1-mat2gray(imadjust(Image.surface)))*3/4+mat2gray(Image.solubilized(:,:,1))/4);
+        ImPreviewButtons=((1-mat2gray(imadjust(Image.Surface)))*3/4+mat2gray(Image.Background(:,:,1))/4);
         surmenu=0;
         
         while surmenu~=1
@@ -499,13 +520,13 @@ end
             ImWithAutoMiss=insertShape(ImPreviewButtons,'circle',[[Data.ButtonsXCoor(AutoButtons),Data.ButtonsYCoor(AutoButtons),Data.ButtonsRadius(AutoButtons)];[Data.ButtonsXCoor(MissButtons),Data.ButtonsYCoor(MissButtons),Data.ButtonsRadius(MissButtons)]],'Color',CellFull,'LineWidth',3);
             
             %Generate or update graphical feature interface
-            warning('OFF')
+            warning('OFF','all')
             if surmenu==0
                 apiControl=scrollImage(ImWithAutoMiss);
             else
                 apiControl.replaceImage(ImWithAutoMiss,'PreserveView',1);
             end
-            warning('ON')
+            warning('ON','all')
             
             surmenu=menu('Select command : ','Continue (without edits)','Edit Position','ABORT');
         
@@ -550,7 +571,7 @@ end
         
         %Initialize variables
         bndmenu=0;
-        ImPreviewBound=1-mat2gray(imadjust(Image.captured(:,:,1)));
+        ImPreviewBound=1-mat2gray(imadjust(Image.Captured(:,:,1)));
 
         while bndmenu~=1
             
@@ -570,13 +591,13 @@ end
             ImWithFeatures=insertShape(ImPreviewBound,'circle',[[Data.ButtonsXCoor(RemainingFeatures),Data.ButtonsYCoor(RemainingFeatures),Data.ButtonsRadius(RemainingFeatures)];[Data.ButtonsXCoor(FlagFeatures),Data.ButtonsYCoor(FlagFeatures),Data.ButtonsRadius(FlagFeatures)]],'Color',CellRF,'LineWidth',3);
            
             %Generate or update graphical feature interface
-            warning('OFF')
+            warning('OFF','all')
             if bndmenu==0
                 apiControl=scrollImage(ImWithFeatures);
             else
                 apiControl.replaceImage(ImWithFeatures,'PreserveView',1);
             end
-            warning('ON')
+            warning('ON','all')
             
             %User action pane
             bndmenu=menu('Select command : ','Continue (without edits)','Flag','UNDO last flagging','Remove points','UNDO last removal','ABORT');
@@ -658,7 +679,7 @@ end
         clear ImWithFeatures ImPreviewBound
         
         solmenu=0;
-        ImPreviewChamber=1-mat2gray(imadjust(Image.solubilized(:,:,1)));
+        ImPreviewChamber=1-mat2gray(imadjust(Image.Background(:,:,1)));
         
         while solmenu~=1
             
@@ -685,13 +706,13 @@ end
             ImWithAMChambers=insertShape(ImPreviewChamber,'circle',[[Data.ChamberXCoor(AutoChamber),Data.ChamberYCoor(AutoChamber),Data.ChamberRadius(AutoChamber)];[Data.ChamberXCoor(MissChamber),Data.ChamberYCoor(MissChamber),Data.ChamberRadius(MissChamber)];[Data.ChamberXCoor(FlagChamber),Data.ChamberYCoor(FlagChamber),Data.ChamberRadius(FlagChamber)]],'Color',CellAMF,'LineWidth',3);
             
             %Generate navigable image and suppress image size warnings
-            warning('OFF')
+            warning('OFF','all')
             if solmenu==0
                 apiControl=scrollImage(ImWithAMChambers);
             else
                 apiControl.replaceImage(ImWithAMChambers,'PreserveView',1);
             end
-            warning('ON')
+            warning('ON','all')
             
             solmenu=menu('Select command : ','Continue (without edits)','Edit Position','ABORT');
         

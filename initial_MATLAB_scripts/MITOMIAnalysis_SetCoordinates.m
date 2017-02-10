@@ -59,11 +59,7 @@ global Log
 scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
 scrollImage = imshow(get(handles.uipanel_scroll,'UserData'),'parent',scrollAxes);
 Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
-
-if isempty(Log.Vertex) %User's first pass through function
-    Log.Vertex=0;
-    Log.TempGamma=get(handles.slider_gamma,'Value');
-end
+Log.TempGamma=1;
 
 % UIWAIT makes MITOMIAnalysis_GUI wait for user response (see UIRESUME)
 uiwait(handles.figure_manipulation);
@@ -223,6 +219,7 @@ if get(hObject,'UserData')>3 %User has selected 4 vertices
         BotRowX=sort(linspace(vertices(3,1),vertices(4,1),Log.Cols));
         TopRowY=interp1(vertices(1:2,1),vertices(1:2,2),TopRowX);
         BotRowY=interp1(vertices(3:4,1),vertices(3:4,2),BotRowX);
+        
         for j=1:Log.Cols
             ColYVal=sort(linspace(TopRowY(j),BotRowY(j),Log.Rows));
             ColXVal=interp1([TopRowY(j) BotRowY(j)],[TopRowX(j) BotRowX(j)],ColYVal);

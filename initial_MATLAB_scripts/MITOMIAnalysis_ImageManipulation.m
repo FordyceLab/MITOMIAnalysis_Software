@@ -70,8 +70,8 @@ function pushbutton_continue_Callback(hObject, eventdata, handles)
 global Log
 
 Log.ImageHolder=get(handles.figure_manipulation,'UserData');
-Log.Rows=str2num(get(handles.edit_col,'String'));
-Log.Cols=str2num(get(handles.edit_row,'String'));
+Log.Rows=str2num(get(handles.edit_row,'String'));
+Log.Cols=str2num(get(handles.edit_col,'String'));
 
 try
     assert(Log.Rows>0 && rem(Log.Rows,1),'MITOMIAnalysis:ImageManipulation:rowValue','Row value declared was not an integer greater than 0');
