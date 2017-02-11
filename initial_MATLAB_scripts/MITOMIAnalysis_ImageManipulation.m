@@ -51,8 +51,8 @@ function MITOMIAnalysis_ImageManipulation_OpeningFcn(hObject, eventdata, handles
 global Log
 Log.Manipulation=[];
 handles.output = hObject;
-set(handles.uipanel_image,'UserData',mat2gray(varargin{1}));
-set(handles.figure_manipulation,'UserData',varargin{2});
+set(handles.uipanel_image,'UserData',mat2gray(varargin{1})); %Captured image
+set(handles.figure_manipulation,'UserData',varargin{2}); %All images
 set(handles.text_directions,'String',sprintf('Directions:\nReorient the image such that chamber #1 is on the top left and chamber #2 is directly below that.\n\nAlso, set the dimensions of the array in the text boxes below'))
 guidata(hObject, handles);
 

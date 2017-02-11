@@ -161,7 +161,7 @@ end
         Data.ChamberRadius=dimensions;
         Data.ChamberAreaFG=dimensions;
         Data.ChamberAreaBG=dimensions;
-        Data.AutofindChamber=dimensions;
+        Data.AutofindChambers=dimensions;
         
         Data.SolubilizedMedianFG=dimensions;
         Data.SolubilizedMeanFG=dimensions;
