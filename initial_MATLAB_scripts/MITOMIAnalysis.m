@@ -1,4 +1,4 @@
-function []=MITOMIAnalysis()
+function MITOMI_Function=MITOMIAnalysis()
 % MITOMIAnalysis provides the user with tools for facilitating data
 % extraction from the MITOMI microfluidic platform for further analysis.
 % MITOMI data analysis has traditionally collected 3 parameters to evaluate
@@ -40,8 +40,7 @@ try
     DataStructureInitialization();
     AutomatedFeatureFinding();
     MITOMIAnalysis_UserEdit(Image,Data);
-    CompileData();
-    fprintMITOMI();
+    abortMITOMI()
     
 catch ME
     
@@ -69,6 +68,7 @@ end
         Log.SurfaceFeatureEvaluation=[];
         Log.CapturedFeatureEvaluation=[];
         Log.BackgroundFeatureEvaluation=[];
+        Log.InitiatedFileSave=[];
         
         %Core variables
         Log.Directory=[];
@@ -239,9 +239,18 @@ end
 
             Image.Background=imread(Log.NameFrames{Log.BackgroundFrame});
             bgFilled=~isempty(Image.Background);
+            if bgFilled
+                dimBG=size(Image.Background);
+                Image.Background=imresize(Image.Background,7500/min(dimBG));
+            end
+            
             waitbar(bgFilled/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',bgFilled,Log.NumberFrames));
 
             Image.Surface=imread(Log.NameFrames{~isempty(Log.BackgroundFrame) + Log.SurfaceFrame});
+            dimSurface=size(Image.Surface);
+            Image.Surface=imresize(Image.Surface,7500/min(dimSurface));
+
+
             waitbar((bgFilled+1)/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',bgFilled+1,Log.NumberFrames));
 
             for i = (bgFilled+Log.SurfaceFrame+1):(bgFilled+Log.SurfaceFrame+Log.CapturedFrames)
@@ -252,25 +261,25 @@ end
                     assert(false,'MITOMIAnalysis:ImagePrep:waitCancel','User cancelled image loading operation');
                 end
 
-                Image.Captured(:,:,i-bgFilled-Log.SurfaceFrame)=imread(Log.NameFrames{i});
+                tempCaptured(:,:)=imread(Log.NameFrames{i});
+                dimCaptured=size(tempCaptured);
+                Image.Captured(:,:,i-bgFilled-Log.SurfaceFrame)=imresize(tempCaptured,7500/min(dimCaptured));
+                tempCaptured=[];
+
                 waitbar(i/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',i,Log.NumberFrames));
             end
 
             delete(WAIT);
 
             %Check to see if all images are the same dimension
-            dimSurface=size(Image.Surface);
             if bgFilled
-                assert(isequal(dimSurface,size(Image.Captured(:,:,1)),size(Image.Background)),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
+                assert(isequal(dimSurface,dimCaptured,dimBG),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
             else
-                assert(isequal(dimSurface,size(Image.Captured(:,:,1))),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
+                assert(isequal(dimSurface,dimCaptured),'MITOMIAnalysis:ImagePrep:dimImages','Image dimensions do not match')
                 Image.Background=zeros(dimSurface);
             end
 
             %Scale image size to prevent Matlab from crashing when disp large image  
-            Image.Background=imresize(Image.Background,7500/min(dimSurface));
-            Image.Surface=imresize(Image.Surface,7500/min(dimSurface));
-            Image.Captured=imresize(Image.Captured,7500/min(dimSurface));
 
         catch ME
 
@@ -497,421 +506,20 @@ end
             close(backgroundMSGBOX)
         end
     end
-%% USER EDIT FUNCTION
-    function []=UserEdit()
-        
-        %Initialize variables
-        ImPreviewButtons=((1-mat2gray(imadjust(Image.Surface)))*3/4+mat2gray(Image.Background(:,:,1))/4);
-        surmenu=0;
-        
-        while surmenu~=1
-            
-            %Generate image detailing button locations and detection method
-            AutoButtons=find(Data.AutofindButtons==true);
-            AutoLength=length(AutoButtons);
-            MissButtons=find(Data.AutofindButtons==false);
-            MissLength=length(MissButtons);
-            CellAuto=cell(AutoLength,1);
-            CellFull=cell(AutoLength+MissLength,1);
-            iax=cellfun('isempty',CellAuto);
-            CellFull(iax)={'green'};
-            imx=cellfun('isempty',CellFull);
-            CellFull(imx)={'blue'};
-            ImWithAutoMiss=insertShape(ImPreviewButtons,'circle',[[Data.ButtonsXCoor(AutoButtons),Data.ButtonsYCoor(AutoButtons),Data.ButtonsRadius(AutoButtons)];[Data.ButtonsXCoor(MissButtons),Data.ButtonsYCoor(MissButtons),Data.ButtonsRadius(MissButtons)]],'Color',CellFull,'LineWidth',3);
-            
-            %Generate or update graphical feature interface
-            warning('OFF','all')
-            if surmenu==0
-                apiControl=scrollImage(ImWithAutoMiss);
-            else
-                apiControl.replaceImage(ImWithAutoMiss,'PreserveView',1);
-            end
-            warning('ON','all')
-            
-            surmenu=menu('Select command : ','Continue (without edits)','Edit Position','ABORT');
-        
-            switch surmenu
-                
-                case 1 %Continue to next step
-                    
-                    disp('Continuing to next stage.')
-                    
-                case 2 %User chose to manually move button location   
 
-                    %Find object to relocate
-                    disp('Click near circle you would like to relocate')
-                    h=impoint(gca,[]); 
-                    h.setColor('m')
-                    [initialXYCoordinates]=h.getPosition();
-                    [~,Nearest]=sortrows((Data.ButtonsXCoor-initialXYCoordinates(1)).^2+(Data.ButtonsYCoor-initialXYCoordinates(2)).^2);
-                    N=Nearest(1);
-                    
-                    %Identify where object should be relocated to
-                    disp('Click where you would like to center object')
-                    g=impoint(gca,[]); 
-                    g.setColor('r')
-                    [finalXYCoordinates]=round(g.getPosition());
-                    
-                    Data.ButtonsXCoor(N)=finalXYCoordinates(1);
-                    Data.ButtonsYCoor(N)=finalXYCoordinates(2);
-                    Data.AutofindButtons(N)=false;
-                    
-                otherwise %window was closed or user manually aborted
-                    ABORT=1;
-                    L.Error('User aborted program during User Reposition mode.');
-                    disp(L.Error)
-                    return
-            end
-        end
-        
-        %Remove memory hogs
-        close('Graphical Feature Interface')
-        clear ImWithAutoMiss ImPreviewButtons
-        
-        
-        %Initialize variables
-        bndmenu=0;
-        ImPreviewBound=1-mat2gray(imadjust(Image.Captured(:,:,1)));
-
-        while bndmenu~=1
-            
-            %Generate image with active feature locations
-            RemainingFeatures=find(Data.Remove==false & Data.Flag==false);
-            FlagFeatures=find(Data.Remove==false & Data.Flag==true);
-            RemLength=length(RemainingFeatures);
-            FlagLength=length(FlagFeatures);
-            
-            CellRem=cell(RemLength,1);
-            CellRF=cell(RemLength+FlagLength,1);
-            iax=cellfun('isempty',CellRem);
-            CellRF(iax)={'red'};
-            irfx=cellfun('isempty',CellRF);
-            CellRF(irfx)={'magenta'};
-
-            ImWithFeatures=insertShape(ImPreviewBound,'circle',[[Data.ButtonsXCoor(RemainingFeatures),Data.ButtonsYCoor(RemainingFeatures),Data.ButtonsRadius(RemainingFeatures)];[Data.ButtonsXCoor(FlagFeatures),Data.ButtonsYCoor(FlagFeatures),Data.ButtonsRadius(FlagFeatures)]],'Color',CellRF,'LineWidth',3);
-           
-            %Generate or update graphical feature interface
-            warning('OFF','all')
-            if bndmenu==0
-                apiControl=scrollImage(ImWithFeatures);
-            else
-                apiControl.replaceImage(ImWithFeatures,'PreserveView',1);
-            end
-            warning('ON','all')
-            
-            %User action pane
-            bndmenu=menu('Select command : ','Continue (without edits)','Flag','UNDO last flagging','Remove points','UNDO last removal','ABORT');
-        
-            switch bndmenu
-                
-                case 1 %User chose to continue
-                    disp('Continuing to next stage.')
-                    
-                case 2
-                    disp('Click near a corder of the data you would like to FLAG and drag cursor to opposing corner.')
-                    [p1a,p1b]=ginput(1);
-                    rbbox; 
-                    axes_handle = gca;
-                    p2=get(axes_handle,'CurrentPoint');
-                    
-                    %Sort vertices in preparation of data selection
-                    if ( p1a < p2(1,1) )
-                       lowX = p1a; highX = p2(1,1);
-                    else
-                       lowX = p2(1,1); highX = p1a;
-                    end
-
-                    if ( p1b < p2(1,2) )
-                       lowY = p1b; highY = p2(1,2);
-                    else
-                       lowY = p2(1,2); highY = p1b;
-                    end
-                    
-                    FlaggedFeatures=find(Data.ButtonsXCoor > lowX & Data.ButtonsXCoor < highX & Data.ButtonsYCoor > lowY & Data.ButtonsYCoor < highY);
-                    Data.Flag(FlaggedFeatures)=true;
-                    disp('Data points flagged by user.')
-                    
-                case 3
-                    
-                    Data.Flag(FlaggedFeatures)=false;
-                    disp('Data points unflagged by user.')
-                    
-                case 4 %User chose to remove points
-                    %Identify data points to remove
-                    disp('Click near a corner of the data you would like to OMIT and drag cursor to opposing corner.')
-                    [p1a,p1b]=ginput(1);
-                    rbbox; 
-                    axes_handle = gca;
-                    p2=get(axes_handle,'CurrentPoint');
-                    
-                    %Sort vertices in preparation of data selection
-                    if ( p1a < p2(1,1) )
-                       lowX = p1a; highX = p2(1,1);
-                    else
-                       lowX = p2(1,1); highX = p1a;
-                    end
-
-                    if ( p1b < p2(1,2) )
-                       lowY = p1b; highY = p2(1,2);
-                    else
-                       lowY = p2(1,2); highY = p1b;
-                    end
-                    
-                    RemovedFeatures=find(Data.ButtonsXCoor > lowX & Data.ButtonsXCoor < highX & Data.ButtonsYCoor > lowY & Data.ButtonsYCoor < highY);
-                    Data.Remove(RemovedFeatures)=true;
-                    disp('Data points removed by user.')
-                    
-                case 5 %Undo previous removal
-                    
-                    Data.Remove(RemovedFeatures)=false;
-                    disp('Last removal undone by user.')
-                    
-                otherwise %Window closed or manually aborted
-                    ABORT=1;
-                    L.Error('User aborted program during User Removal mode.');
-                    disp(L.Error)
-                    return
-            end
-        end
-        
-        %Remove memory hogs
-        close('Graphical Feature Interface')
-        clear ImWithFeatures ImPreviewBound
-        
-        solmenu=0;
-        ImPreviewChamber=1-mat2gray(imadjust(Image.Background(:,:,1)));
-        
-        while solmenu~=1
-            
-            %Generate image detailing button locations and detection method
-            AutoChamber=find(Data.AutofindChamber==true & Data.Remove==false & Data.Flag==false);
-            MissChamber=find(Data.AutofindChamber==false & Data.Remove==false & Data.Flag==false);
-            FlagChamber=find(Data.Flag==true & Data.Remove==false);
-            
-            AuLength=length(AutoChamber);
-            MiLength=length(MissChamber);
-            FlLength=length(FlagChamber);
-            
-            CellAu=cell(AuLength,1);
-            CellAM=cell(AuLength+MiLength,1);
-            CellAMF=cell(AuLength+MiLength+FlLength,1);
-            iaux=cellfun('isempty',CellAu);
-            CellAM(iaux)={'green'};
-            iamx=cellfun('isempty',CellAM);
-            CellAMF(iaux)={'green'};
-            CellAMF(iamx)={'blue'};
-            iamfx=cellfun('isempty',CellAMF);
-            CellAMF(iamfx)={'magenta'};
-            
-            ImWithAMChambers=insertShape(ImPreviewChamber,'circle',[[Data.ChamberXCoor(AutoChamber),Data.ChamberYCoor(AutoChamber),Data.ChamberRadius(AutoChamber)];[Data.ChamberXCoor(MissChamber),Data.ChamberYCoor(MissChamber),Data.ChamberRadius(MissChamber)];[Data.ChamberXCoor(FlagChamber),Data.ChamberYCoor(FlagChamber),Data.ChamberRadius(FlagChamber)]],'Color',CellAMF,'LineWidth',3);
-            
-            %Generate navigable image and suppress image size warnings
-            warning('OFF','all')
-            if solmenu==0
-                apiControl=scrollImage(ImWithAMChambers);
-            else
-                apiControl.replaceImage(ImWithAMChambers,'PreserveView',1);
-            end
-            warning('ON','all')
-            
-            solmenu=menu('Select command : ','Continue (without edits)','Edit Position','ABORT');
-        
-            switch solmenu
-                
-                case 1
-                    disp('Continuing to next stage.')
-                    
-                case 2
-                    
-                    %Find object to relocate
-                    disp('Click near chamber you would like to relocate')
-                    u=impoint(gca,[]); 
-                    u.setColor('m')
-                    [initialXYCCoordinates]=u.getPosition();
-                    [~,NearestC]=sortrows((Data.ChamberXCoor-initialXYCCoordinates(1)).^2+(Data.ChamberYCoor-initialXYCCoordinates(2)).^2);
-                    NC=NearestC(1);
-                    
-                    %Identify where object should be relocated to
-                    disp('Click where you would like to recenter object')
-                    v=impoint(gca,[]); 
-                    v.setColor('r')
-                    [finalXYCCoordinates]=round(v.getPosition());
-                    Data.ChamberXCoor(NC)=finalXYCCoordinates(1);
-                    Data.ChamberYCoor(NC)=finalXYCCoordinates(2);
-                    Data.AutofindChamber(NC)=false;
-            
-                otherwise %Window closed or manually aborted
-                    ABORT=1;
-                    L.Error('User aborted program during User Removal mode.');
-                    disp(L.Error)
-                    return
-            end
-        end
-    close('Graphical Feature Interface')    
-    ABORT=0;
-    disp('User input stage complete.') 
-%     save('tempdata2.mat','Data','Image','L');
-    end
-%% DATA COMPILIATION FUNCTION
-
-    function [Data,L]=CompileData(Image,Data,L)
-        
-        index=0;
-        L.NumWells=length(Data.Index);
-        L.NumSamples=sum(~Data.Remove);
-        WAIT=waitbar(0,'Extracting data from positions...','Name','Data Extraction Percent Complete: ');
-        disp('Extracting data from positions...')
-        window=4*L.ApproxBackgroundRadius+1;
-        [MaskX,MaskY]=meshgrid(1:window,1:window);
-        
-        %Masks are made such that button is always centered
-        %Chamber is then inserted into mask relative to button coordinates
-        ButtonMask=uint16(sqrt((MaskX-(2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(2*L.ApproxBackgroundRadius+1)).^2)<=L.Radius*.9);
-        
-        for W=1:L.NumWells
-            index=index+double(~Data.Remove(W));
-            if Data.Remove(W)==0
-            Data.Index(W)=index;
-            end
-            
-            %Generate masks for data extraction
-            ChamberBGMask =       uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius+1)).^2)>=L.ApproxBackgroundRadius*1.1 & sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius+1)).^2)<=L.ApproxBackgroundRadius*1.3 );
-            ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius+1)).^2)<=L.ApproxBackgroundRadius &~ sqrt((MaskX-(2*L.ApproxBackgroundRadius+1)).^2+(MaskY-(2*L.ApproxBackgroundRadius+1)).^2)<=L.Radius*1.1 );
-            Data.ButtonsAreaFG(W)=sum(sum(ButtonMask));
-            Data.ButtonsAreaBG(W)=sum(sum(ChamberNoButtonMask));
-            Data.ChamberAreaFG(W)=sum(sum(ChamberNoButtonMask));
-            Data.ChamberAreaBG(W)=sum(sum(ChamberBGMask));
-            
-            %Collect data from solubilized chambers
-            for frameS=1:L.numsolframes
-                
-                imageS=Image.solubilized((Data.ButtonsYCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius),frameS);
-                DNAChamber = double(imageS.*ChamberNoButtonMask);
-                DNAChamberBG = double(imageS.*ChamberBGMask);
-
-                Data.solubilizedMedianFG(W,frameS)=median(DNAChamber(DNAChamber(:)>0));
-                Data.solubilizedMeanFG(W,frameS)=mean(DNAChamber(DNAChamber(:)>0));
-                Data.solubilizedSTDFG(W,frameS)=std(DNAChamber(DNAChamber(:)>0));
-                Data.solubilizedTotalFG(W,frameS)=sum(DNAChamber(DNAChamber(:)>0));
-                Data.solubilizedMedianBG(W,frameS)=median(DNAChamberBG(DNAChamberBG(:)>0));
-                Data.solubilizedMeanBG(W,frameS)=mean(DNAChamberBG(DNAChamberBG(:)>0));
-                Data.solubilizedSTDBG(W,frameS)=std(DNAChamberBG(DNAChamberBG(:)>0));
-                Data.solubilizedTotalBG(W,frameS)=sum(DNAChamberBG(DNAChamberBG(:)>0))*Data.ChamberAreaFG(W)./Data.ChamberAreaBG(W);
-                Data.solubilizedFractionSaturatedFG(W,frameS)=length(find(DNAChamber==65535))./length(find(DNAChamber(:)>0));
-                Data.solubilizedFractionSaturatedBG(W,frameS)=length(find(DNAChamberBG==65535))./length(find(DNAChamberBG(:)>0));
-                
-            end
-            
-            %Collect data from surface immobilized molecules
-            imageB=Image.surface((Data.ButtonsYCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius));
-            SurfaceButton=double(imageB.*ButtonMask);
-            SurfaceBG=double(imageB.*ChamberNoButtonMask);
-            
-            Data.surfaceMedianFG(W)=median(SurfaceButton(SurfaceButton(:)>0));
-            Data.surfaceAverageFG(W)=mean(SurfaceButton(SurfaceButton(:)>0));
-            Data.surfaceSTDFG(W)=std(SurfaceButton(SurfaceButton(:)>0));
-            Data.surfaceTotalFG(W)=sum(SurfaceButton(SurfaceButton(:)>0));
-            Data.surfaceMedianBG(W)=median(SurfaceBG(SurfaceBG(:)>0));
-            Data.surfaceAverageBG(W)=mean(SurfaceBG(SurfaceBG(:)>0));
-            Data.surfaceSTDBG(W)=std(SurfaceBG(SurfaceBG(:)>0));
-            Data.surfaceTotalBG(W)=sum(SurfaceBG(SurfaceBG(:)>0))*Data.ButtonsAreaFG(W)./Data.ButtonsAreaBG(W);
-            Data.surfaceFractionSaturatedFG(W)=length(find(SurfaceButton==65535))./length(find(SurfaceButton(:)>0));
-            Data.surfaceFractionSaturatedBG(W)=length(find(SurfaceBG==65535))./length(find(SurfaceBG(:)>0));
-            
-            %Collect data from captured molecule images
-            for frameC=1:L.numboundframes
-                
-                imageC=Image.captured((Data.ButtonsYCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*L.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*L.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*L.ApproxBackgroundRadius),frameC);
-                CapturedButton=double(imageC.*ButtonMask);
-                CapturedBG=double(imageC.*ChamberNoButtonMask);
-                
-                Data.capturedMedianFG(W,frameC)=median(CapturedButton(CapturedButton(:)>0));
-                Data.capturedAverageFG(W,frameC)=mean(CapturedButton(CapturedButton(:)>0));
-                Data.capturedSTDFG(W,frameC)=std(CapturedButton(CapturedButton(:)>0));
-                Data.capturedTotalFG(W,frameC)=sum(CapturedButton(CapturedButton(:)>0));
-                Data.capturedMedianBG(W,frameC)=median(CapturedBG(CapturedBG(:)>0));
-                Data.capturedAverageBG(W,frameC)=mean(CapturedBG(CapturedBG(:)>0));
-                Data.capturedSTDBG(W,frameC)=std(CapturedBG(CapturedBG(:)>0));
-                Data.capturedTotalBG(W,frameC)=sum(CapturedBG(CapturedBG(:)>0))*Data.ButtonsAreaFG(W)./Data.ButtonsAreaBG(W); 
-                Data.capturedFractionSaturatedFG(W,frameC)=length(find(CapturedButton==65535))./length(find(CapturedButton(:)>0));
-                Data.capturedFractionSaturatedBG(W,frameC)=length(find(CapturedBG==65535))./length(find(CapturedBG(:)>0));
-                
-            end
-            WAIT=waitbar(0,'Extracting data from positions...','Name','Data Extraction Percent Complete: ');
-        
-            waitbar(W/L.NumWells,WAIT,sprintf('%6.3f',W/L.NumWells*100));
-
-        end
-
-        disp('Data Extraction Complete.')
-        disp('Preparing to save data.')
-        delete(WAIT)
-    end
-
-
-%% PRINT DATA FUNCTION
-    function []=fprintMITOMI(L,Data)
-        
-        savemat=strcat('editted_',L.name,'_AnalysisData_v2_2.mat');
-        save(savemat,'L','Data')
-
-        %create string header for dissociation data
-        HeaderFormat={'Index','ColIndx','RowIndx','Removed','Flagged','ButXCoor','ButYCoor','ButRad','BuAreaFG','BuAreaBG','ButAutoF','BNDMedFG','BNDAvgFG','BNDStdFG','BNDSumFG','BNDSatFG','BNDMedBG','BNDAvgBG','BNDStdBG','BNDSumBG','BNDSatBG'};
-        for z=1:L.numboundframes
-            HeaderFormat(21+z)={['CAPMedFG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes)={['CAPAvgFG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes*2)={['CAPStdFG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes*3)={['CAPSumFG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes*4)={['CAPSatFG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes*5)={['CAPMedBG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes*6)={['CAPAvgBG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes*7)={['CAPStdBG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes*8)={['CAPSumBG' num2str(z)]};
-            HeaderFormat(21+z+L.numboundframes*9)={['CAPSatBG' num2str(z)]};
-        end
-
-        HeaderFormat(end+1:end+6)={'SOLXCoor','SOLYCoor','SOLRad','SOAreaFG','SOAreaBG','SOLAutoF'};
-        HOffNum=27+10*L.numboundframes;
-
-        for SolFrame=1:L.numsolframes
-            HeaderFormat(HOffNum+SolFrame)={['SOLMedFG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes)={['SOLAvgFG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes*2)={['SOLStdFG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes*3)={['SOLSumFG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes*4)={['SOLSatFG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes*5)={['SOLMedBG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes*6)={['SOLAvgBG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes*7)={['SOLStdBG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes*8)={['SOLSumBG' num2str(SolFrame)]};
-            HeaderFormat(HOffNum+SolFrame+L.numsolframes*9)={['SOLSatBG' num2str(SolFrame)]};
-        end
-
-        DataText=fopen(['editted_' L.name '_AnalysisData_v2_2.txt'],'w');
-        IntermediateFormat=struct2cell(Data);
-        DataFormat=cat(2,IntermediateFormat{:});
-        fprintf(DataText,'%s\t',HeaderFormat{:} );
-        fprintf(DataText,'\r\n');
-
-        for Z=1:L.NumWells;
-            fprintf(DataText,'%.0f\t',DataFormat(Z,:)');
-            fprintf(DataText,'\r\n');
-        end
-        fclose(DataText);
-
-        savetxt=strcat('editted_',L.name,'_AnalysisData_v2_2_NoHeaders.txt');
-        save(savetxt,'DataFormat','-ascii')
-        disp('Data saved. Data extraction complete.')    
-
-    end
-
-function []=abortMITOMI()
+%% ABORT MITOMI
+    function []=abortMITOMI()
 
     if ~strcmp(ME.identifier,'MITOMIAnalysis:MITOMIAnalysis_Initialization:usrCancel')
         Log.ImageHolder='Images not saved';
         LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
         save(LOGFILENAME,'Log')
         disp('Log file saved.')
+        clear global
         close()
+    elseif strcmp(Log.InitiatedFileSave,'Passed')
+        clear global
+        disp('Congrats - MITOMI Analysis is complete')
     end
 end
 

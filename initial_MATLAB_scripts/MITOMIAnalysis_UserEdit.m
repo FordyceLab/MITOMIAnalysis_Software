@@ -46,9 +46,12 @@ end
 % --- Executes just before MITOMIAnalysis_GUI is made visible.
 function MITOMIAnalysis_UserEdit_OpeningFcn(hObject, ~, handles, varargin)
 
+global Log
+
 %Set initial control text and pass images and data into objects
-Image=varargin{1};
-Data=varargin{2};
+Log=varargin{1};
+Image=varargin{2};
+Data=varargin{3};
 set(handles.uipanel_scroll,'UserData',Image);
 set(handles.figure_manipulation,'UserData',Data);
 set(handles.text_directions,'String',sprintf('1.Navigate to one of the four corners of the array \n\n2. Zoom into the spot to easily see the spot \n\n3. Adjust Gamma to make the background barely visible \n4. Lock the image \n5. Press the ''Set Coordinate'' button \n\n6. Click on three points on the circumference of the spot \n7. Unlock image and continue to the next corner of the array'))
@@ -58,7 +61,6 @@ set(handles.text_directions,'UserData',1); %track correction phase
 set(handles.pushbutton_continue,'UserData',0); %curr displayed image holder
 guidata(hObject, handles);
 
-global Log
 
 %Generate initial image and grab controls
 AutofindOnImage(Image.Surface,Data.AutofindButtons,Data.ButtonsXCoor,Data.ButtonsYCoor,Data.ButtonsRadius,Data.Flag,Data.Remove,hObject,handles)
@@ -75,6 +77,8 @@ function pushbutton_continue_Callback(hObject, ~, handles)
 
 global Log
 phase=get(handles.text_directions,'UserData');
+Image=get(handles.uipanel_scroll,'UserData');
+Data=get(handles.figure_manipulation,'UserData');
 
 switch phase
     case 1
@@ -82,10 +86,9 @@ switch phase
         Log.RelocPoints=[];
         Log.RelocValid=[];
         Log.RelocCoor=[];
+        Log.SurfaceFeatureEvaluation='Passed';
         
         %Generate image for next stage
-        Image=get(handles.uipanel_scroll,'UserData');
-        Data=get(handles.figure_manipulation,'UserData');
         RemoveFromImage(uint16(squeeze(Image.Captured(:,:,1))),Data.ButtonsXCoor,Data.ButtonsYCoor,Data.ButtonsRadius,Data.Flag,Data.Remove,hObject,handles)
         scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
         scrollImage = imshow(get(handles.pushbutton_continue,'UserData'),'parent',scrollAxes);
@@ -102,18 +105,18 @@ switch phase
         set(handles.pushbutton_undoflag,{'Enable','Visible','ForegroundColor'},{'on','on','black'});
         
     case 2
-        Image=get(handles.uipanel_scroll,'UserData');
-        Data=get(handles.figure_manipulation,'UserData');
-       
+
+        Log.CapturedFeatureEvaluation='Passed';
         %Generate image for next stage if user defined
         if ~isempty(Image.Background)
-            AutofindOnImage(Image.Background,Data.AutofindChamber,Data.ChamberXCoor,Data.ChamberYCoor,Data.ChamberRadius,Data.Flag,Data.Remove,hObject,handles)
+            AutofindOnImage(Image.Background,Data.AutofindChambers,Data.ChamberXCoor,Data.ChamberYCoor,Data.ChamberRadius,Data.Flag,Data.Remove,hObject,handles)
             scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
             scrollImage = imshow(get(handles.pushbutton_continue,'UserData'),'parent',scrollAxes);
             Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
 
 
             %Update uibutton controls
+            set(handles.text_directions,'UserData',3);
             set(handles.pushbutton_remove,{'Enable','Visible'},{'inactive','off'});
             set(handles.pushbutton_undoremove,{'Enable','Visible'},{'inactive','off'});
             set(handles.pushbutton_flag,{'Enable','Visible'},{'inactive','off'});
@@ -123,14 +126,17 @@ switch phase
             set(handles.pushbutton_flag,{'Enable','Visible'},{'inactive','off'});
             set(handles.pushbutton_update2,{'Enable','Visible'},{'on','on'});
         else
-            CompileMITOMIData
-            fprintfMITOMI()
+            set(handles.figure_manipulation,{'Visibile'},{'off'});
+            [Data]=CompileData(Image,Data);
+            fprintMITOMI(Image,Data);
             uiresume(handles.figure_manipulation)         
         end
         
     case 3
-        CompileMITOMIData();
-        fprtintMITOMI();
+        set(handles.figure_manipulation,{'Visible'},{'off'});
+        Log.BackgroundFeatureEvaluation='Passed';
+        [Data]=CompileData(Image,Data);
+        fprintMITOMI(Image,Data);
         uiresume(handles.figure_manipulation);
         
 end
@@ -557,3 +563,157 @@ RemoveFromImage(uint16(squeeze(Image.Captured(:,:,1))),Data.ButtonsXCoor,Data.Bu
 scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
 scrollImage = imshow(get(handles.pushbutton_continue,'UserData'),'parent',scrollAxes);
 Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
+
+function [Data]=CompileData(Image,Data)
+
+global Log
+
+    index=0;
+    Log.NumWells=Log.Rows*Log.Cols;
+    Log.NumSamples=sum(~Data.Remove);
+    WAIT=waitbar(0,'Extracting data from features...','Name','Data Extraction Percent Complete: ');
+    window=4*Log.ApproxBackgroundRadius+1;
+    [MaskX,MaskY]=meshgrid(1:window,1:window);
+
+    %Masks are made such that button is always centered
+    %Chamber is then inserted into mask relative to button coordinates
+
+    for W=1:Log.NumWells
+        
+        index=index+double(~Data.Remove(W));
+        
+        if Data.Remove(W)==0
+        Data.Index(W)=index;
+        end
+        
+        %Generate unique button masks in case variable radius is used   
+        ButtonMask=uint16(sqrt((MaskX-(2*Data.ButtonsRadius(W)+1)).^2+(MaskY-(2*Data.ButtonsRadius(W)+1)).^2)<=Data.ButtonsRadius(W));
+        
+        %Generate masks for data extraction
+        if ~isempty(Image.Background)
+            ChamberBGMask =       uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)>=Log.ApproxBackgroundRadius*1.1 & sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius*1.3 );
+            ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius &~ sqrt((MaskX-(2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius*1.2 );
+            Data.ChamberAreaFG(W)=sum(sum(ChamberNoButtonMask));
+            Data.ChamberAreaBG(W)=sum(sum(ChamberBGMask));
+            
+            %Collect data from solubilized/background chambers
+            ImageSol=Image.Background((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius));
+            DNAChamber = double(ImageSol.*ChamberNoButtonMask);
+            DNAChamberBG = double(ImageSol.*ChamberBGMask);
+
+            Data.SolubilizedMedianFG(W)=median(DNAChamber(DNAChamber(:)>0));
+            Data.SolubilizedMeanFG(W)=mean(DNAChamber(DNAChamber(:)>0));
+            Data.SolubilizedSTDFG(W)=std(DNAChamber(DNAChamber(:)>0));
+            Data.SolubilizedTotalFG(W)=sum(DNAChamber(DNAChamber(:)>0));
+            Data.SolubilizedMedianBG(W)=median(DNAChamberBG(DNAChamberBG(:)>0));
+            Data.SolubilizedMeanBG(W)=mean(DNAChamberBG(DNAChamberBG(:)>0));
+            Data.SolubilizedSTDBG(W)=std(DNAChamberBG(DNAChamberBG(:)>0));
+            Data.SolubilizedTotalBG(W)=sum(DNAChamberBG(DNAChamberBG(:)>0))*Data.ChamberAreaFG(W)./Data.ChamberAreaBG(W);
+            Data.SolubilizedFractionSaturatedFG(W)=length(find(DNAChamber==65535))./length(find(DNAChamber(:)>0));
+            Data.SolubilizedFractionSaturatedBG(W)=length(find(DNAChamberBG==65535))./length(find(DNAChamberBG(:)>0));
+
+        else
+            ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxButtonRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxButtonRadius+1)).^2)>=Log.ApproxButtonRadius*1.2 &~ sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)<=Log.Radius*1.4 );
+        end            
+        
+        Data.ButtonsAreaFG(W)=sum(sum(ButtonMask));
+        Data.ButtonsAreaBG(W)=sum(sum(ChamberNoButtonMask));
+
+        %Collect data from surface immobilized molecules
+        ImageSur=Image.Surface((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius));
+        SurfaceButton=double(ImageSur.*ButtonMask);
+        SurfaceBG=double(ImageSur.*ChamberNoButtonMask);
+
+        Data.SurfaceMedianFG(W)=median(SurfaceButton(SurfaceButton(:)>0));
+        Data.SurfaceAverageFG(W)=mean(SurfaceButton(SurfaceButton(:)>0));
+        Data.SurfaceSTDFG(W)=std(SurfaceButton(SurfaceButton(:)>0));
+        Data.SurfaceTotalFG(W)=sum(SurfaceButton(SurfaceButton(:)>0));
+        Data.SurfaceMedianBG(W)=median(SurfaceBG(SurfaceBG(:)>0));
+        Data.SurfaceAverageBG(W)=mean(SurfaceBG(SurfaceBG(:)>0));
+        Data.SurfaceSTDBG(W)=std(SurfaceBG(SurfaceBG(:)>0));
+        Data.SurfaceTotalBG(W)=sum(SurfaceBG(SurfaceBG(:)>0))*Data.ButtonsAreaFG(W)./Data.ButtonsAreaBG(W);
+        Data.SurfaceFractionSaturatedFG(W)=length(find(SurfaceButton==65535))./length(find(SurfaceButton(:)>0));
+        Data.SurfaceFractionSaturatedBG(W)=length(find(SurfaceBG==65535))./length(find(SurfaceBG(:)>0));
+
+        %Collect data from captured molecule images
+        for FrameCap=1:Log.CapturedFrames
+
+            ImageCap=uint16(squeeze(Image.Captured((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius),FrameCap)));
+            CapturedButton=double(ImageCap.*ButtonMask);
+            CapturedBG=double(ImageCap.*ChamberNoButtonMask);
+
+            Data.CapturedMedianFG(W,FrameCap)=median(CapturedButton(CapturedButton(:)>0));
+            Data.CapturedAverageFG(W,FrameCap)=mean(CapturedButton(CapturedButton(:)>0));
+            Data.CapturedSTDFG(W,FrameCap)=std(CapturedButton(CapturedButton(:)>0));
+            Data.CapturedTotalFG(W,FrameCap)=sum(CapturedButton(CapturedButton(:)>0));
+            Data.CapturedMedianBG(W,FrameCap)=median(CapturedBG(CapturedBG(:)>0));
+            Data.CapturedAverageBG(W,FrameCap)=mean(CapturedBG(CapturedBG(:)>0));
+            Data.CapturedSTDBG(W,FrameCap)=std(CapturedBG(CapturedBG(:)>0));
+            Data.CapturedTotalBG(W,FrameCap)=sum(CapturedBG(CapturedBG(:)>0))*Data.ButtonsAreaFG(W)./Data.ButtonsAreaBG(W); 
+            Data.CapturedFractionSaturatedFG(W,FrameCap)=length(find(CapturedButton==65535))./length(find(CapturedButton(:)>0));
+            Data.CapturedFractionSaturatedBG(W,FrameCap)=length(find(CapturedBG==65535))./length(find(CapturedBG(:)>0));
+
+        end
+
+        waitbar(W/Log.NumWells,WAIT,sprintf('%6.3f',W/Log.NumWells*100));
+
+    end
+
+    delete(WAIT)
+
+function []=fprintMITOMI(Image,Data)
+
+global Log
+
+if isempty(Log.InitiatedFileSave)
+    savename=['Completed_' Log.NameOutput];
+    savemat=[savename '.mat'];
+else
+    savename=['Reviewed_' Log.NameOutput '_on_' datestr(now,30)];
+    savemat=[ savename '.mat'];
+end
+    Log.InitiatedFileSave='Passed';
+    saveMSGBOX=msgbox('Saving large files. Please be patient','Saving files');
+%     save(savemat,'Log','Image','Data','-v7.3')
+
+    %create string header for dissociation data
+    HeaderFormat={'Index','ColIndex','RowIndex','Removed','Flagged','ButtonXCoor','ButtonYCoor','ButtonRadius','ButtonAreaFG','ButtonAreaBG','ButtonAutoFind','BNDMedFG','BNDAvgFG','BNDStdFG','BNDSumFG','BNDSatFG','BNDMedBG','BNDAvgBG','BNDStdBG','BNDSumBG','BNDSatBG'};
+
+    for z=1:Log.CapturedFrames
+        HeaderFormat(21+z)={['CAPMedFG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames)={['CAPAvgFG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames*2)={['CAPStdFG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames*3)={['CAPSumFG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames*4)={['CAPSatFG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames*5)={['CAPMedBG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames*6)={['CAPAvgBG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames*7)={['CAPStdBG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames*8)={['CAPSumBG' num2str(z)]};
+        HeaderFormat(21+z+Log.CapturedFrames*9)={['CAPSatBG' num2str(z)]};
+    end
+
+    HeaderFormat(end+1:end+16)={'ChamberXCoor','ChamberYCoor','ChamberRadius','ChamberAreaFG','ChamberAreaBG','ChamberAutoFind','SOLMedFG','SOLAvgFG','SOLStdFG','SOLSumFG','SOLSatFG','SOLMedBG','SOLAvgBG','SOLStdBG','SOLSumBG','SOLSatBG'};
+
+    %Save txt file with headers
+    DataText=fopen([savename '.txt'],'w');
+    IntermediateFormat=struct2cell(Data);
+    DataFormat=cat(2,IntermediateFormat{:});
+    fprintf(DataText,'%s\t',HeaderFormat{:} );
+    fprintf(DataText,'\r\n');
+
+    for Z=1:Log.NumWells;
+        fprintf(DataText,'%f\t',DataFormat(Z,:)');
+        fprintf(DataText,'\r\n');
+    end
+    
+    fclose(DataText);
+    
+    %Save txt file without headers
+    savetxt=[savename '_NoHeaders.txt'];
+    save(savetxt,'DataFormat','-ascii','-tabs')
+    
+    if ishandle(saveMSGBOX)
+        close(saveMSGBOX);
+    end
+    
+
