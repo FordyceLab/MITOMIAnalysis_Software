@@ -126,14 +126,18 @@ switch phase
             set(handles.pushbutton_flag,{'Enable','Visible'},{'inactive','off'});
             set(handles.pushbutton_update2,{'Enable','Visible'},{'on','on'});
         else
-            set(handles.figure_manipulation,{'Visibile'},{'off'});
+%             set(handles.figure_manipulation,{'Visibile'},{'off'});
             [Data]=CompileData(Image,Data);
             fprintMITOMI(Image,Data);
             uiresume(handles.figure_manipulation)         
         end
         
     case 3
-        set(handles.figure_manipulation,{'Visible'},{'off'});
+%         set(handles.figure_manipulation,{'Visible'},{'off'});
+        Log.RelocPoints=[];
+        Log.RelocValid=[];
+        Log.RelocCoor=[];
+        Log.ManipulationAPI='Deleted';
         Log.BackgroundFeatureEvaluation='Passed';
         [Data]=CompileData(Image,Data);
         fprintMITOMI(Image,Data);
@@ -674,7 +678,7 @@ else
 end
     Log.InitiatedFileSave='Passed';
     saveMSGBOX=msgbox('Saving large files. Please be patient','Saving files');
-%     save(savemat,'Log','Image','Data','-v7.3')
+    save(savemat,'Log','Image','Data','-v7.3')
 
     %create string header for dissociation data
     HeaderFormat={'Index','ColIndex','RowIndex','Removed','Flagged','ButtonXCoor','ButtonYCoor','ButtonRadius','ButtonAreaFG','ButtonAreaBG','ButtonAutoFind','BNDMedFG','BNDAvgFG','BNDStdFG','BNDSumFG','BNDSatFG','BNDMedBG','BNDAvgBG','BNDStdBG','BNDSumBG','BNDSatBG'};

@@ -39,7 +39,7 @@ try
     
     DataStructureInitialization();
     AutomatedFeatureFinding();
-    MITOMIAnalysis_UserEdit(Image,Data);
+    MITOMIAnalysis_UserEdit(Log,Image,Data);
     abortMITOMI()
     
 catch ME
@@ -452,7 +452,7 @@ end
                     %Convert local coordinates to global coordinates
                     Data.ChamberXCoor(n)=round(backgroundLocations(1,1)-Log.ApproxBackgroundRadius-1+CoorX);
                     Data.ChamberYCoor(n)=round(backgroundLocations(1,2)-Log.ApproxBackgroundRadius-1+CoorY);
-                    Data.AutofindChamber(n)=true;
+                    Data.AutofindChambers(n)=true;
 
                     Log.BackgroundTicker=Log.BackgroundTicker+1;
 
@@ -480,7 +480,7 @@ end
                     %Convert "best data" local coor into global for capt image
                     Data.ChamberXCoor(n)=s_local(1)-1+CoorX-Log.ApproxBackgroundRadius;
                     Data.ChamberYCoor(n)=t_local(1)-1+CoorY-Log.ApproxBackgroundRadius;
-                    Data.AutofindChamber(n)=false;
+                    Data.AutofindChambers(n)=false;
                 end
 
                 waitbar(n/length(Data.Index));
