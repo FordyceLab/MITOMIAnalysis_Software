@@ -200,7 +200,7 @@ try
 
 catch
     assert(false,'MITOMIAnalysis:ImageManipulation:axisError','User clicked off the image when setting coordinates')
-    return %%%CONFIRM THIS RETURN CLOSES GUI ON ERROR%%%
+    return
 end
 
 %Pass to Log

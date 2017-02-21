@@ -108,7 +108,7 @@ switch phase
 
         Log.CapturedFeatureEvaluation='Passed';
         %Generate image for next stage if user defined
-        if ~isempty(Image.Background)
+        if sum(sum(Image.Background))~=0
             AutofindOnImage(Image.Background,Data.AutofindChambers,Data.ChamberXCoor,Data.ChamberYCoor,Data.ChamberRadius,Data.Flag,Data.Remove,hObject,handles)
             scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
             scrollImage = imshow(get(handles.pushbutton_continue,'UserData'),'parent',scrollAxes);
@@ -126,14 +126,16 @@ switch phase
             set(handles.pushbutton_flag,{'Enable','Visible'},{'inactive','off'});
             set(handles.pushbutton_update2,{'Enable','Visible'},{'on','on'});
         else
-%             set(handles.figure_manipulation,{'Visibile'},{'off'});
+            Log.RelocPoints=[];
+            Log.RelocValid=[];
+            Log.RelocCoor=[];
+            Log.ManipulationAPI='Deleted';
             [Data]=CompileData(Image,Data);
             fprintMITOMI(Image,Data);
             uiresume(handles.figure_manipulation)         
         end
         
     case 3
-%         set(handles.figure_manipulation,{'Visible'},{'off'});
         Log.RelocPoints=[];
         Log.RelocValid=[];
         Log.RelocCoor=[];
@@ -188,8 +190,8 @@ for i = 1:length(Log.RelocCoor(:,1))
 end
 
 %Update feature locations
-Data.ButtonsXCoor(MoveFeat)=Log.RelocCoor(:,1);
-Data.ButtonsYCoor(MoveFeat)=Log.RelocCoor(:,2);
+Data.ButtonsXCoor(MoveFeat)=round(Log.RelocCoor(:,1));
+Data.ButtonsYCoor(MoveFeat)=round(Log.RelocCoor(:,2));
 Data.AutofindButtons(MoveFeat)=false;
 
 %Reset coordinate tracking variables
@@ -276,11 +278,10 @@ API.replaceImage(display,'PreserveView',true);
 
 % --- Executes on button press in pushbutton_cancel.
 function pushbutton_cancel_Callback(~, ~, handles)
-uiresume(handles.figure_manipulation)
+uiresume()
 
 % --- Outputs from this function are returned to the command line.
 function MITOMIAnalysis_UserEdit_OutputFcn(~, ~, handles)
-
 delete(handles.figure_manipulation)
 
 % --- Executes on button press in pushbutton_correct2.
@@ -326,8 +327,8 @@ for i = 1:length(Log.RelocCoor(:,1))
 end
 
 %Update feature locations
-Data.ChamberXCoor(MoveFeat)=Log.RelocCoor(:,1);
-Data.ChamberYCoor(MoveFeat)=Log.RelocCoor(:,2);
+Data.ChamberXCoor(MoveFeat)=round(Log.RelocCoor(:,1));
+Data.ChamberYCoor(MoveFeat)=round(Log.RelocCoor(:,2));
 Data.AutofindChambers(MoveFeat)=false;
 
 %Reset coordinate tracking variables
@@ -439,6 +440,8 @@ guidata(hObject,handles);
 % --- Executes on button press in pushbutton_remove.
 function pushbutton_remove_Callback(hObject, ~, handles)
 
+global Log
+
 Data=get(handles.figure_manipulation,'UserData');
 [p1a,p1b]=ginputax(handles.uipanel_scroll,1);
 rbbox; 
@@ -463,14 +466,17 @@ Data.Remove(RemovedFeatures)=true;
 set(handles.figure_manipulation,'UserData',Data);
 guidata(hObject,Data);
 
+API=iptgetapi(Log.ManipulationAPI);
 Image=get(handles.uipanel_scroll,'UserData');
 RemoveFromImage(uint16(squeeze(Image.Captured(:,:,1))),Data.ButtonsXCoor,Data.ButtonsYCoor,Data.ButtonsRadius,Data.Flag,Data.Remove,hObject,handles)
-scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-scrollImage = imshow(get(handles.pushbutton_continue,'UserData'),'parent',scrollAxes);
-Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
+
+API=iptgetapi(Log.ManipulationAPI);
+API.replaceImage(get(handles.pushbutton_continue,'UserData'),'PreserveView',1);
 
 % --- Executes on button press in pushbutton_undoremove.
 function pushbutton_undoremove_Callback(hObject, ~, handles)
+
+global Log
 
 Data=get(handles.figure_manipulation,'UserData');
 [p1a,p1b]=ginputax(handles.uipanel_scroll,1);
@@ -498,12 +504,14 @@ guidata(hObject,Data);
 
 Image=get(handles.uipanel_scroll,'UserData');
 RemoveFromImage(uint16(squeeze(Image.Captured(:,:,1))),Data.ButtonsXCoor,Data.ButtonsYCoor,Data.ButtonsRadius,Data.Flag,Data.Remove,hObject,handles)
-scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-scrollImage = imshow(get(handles.pushbutton_continue,'UserData'),'parent',scrollAxes);
-Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
+
+API=iptgetapi(Log.ManipulationAPI);
+API.replaceImage(get(handles.pushbutton_continue,'UserData'),'PreserveView',1);
 
 % --- Executes on button press in pushbutton_flag.
 function pushbutton_flag_Callback(hObject, ~, handles)
+
+global Log
 
 Data=get(handles.figure_manipulation,'UserData');
 [p1a,p1b]=ginputax(handles.uipanel_scroll,1);
@@ -531,12 +539,14 @@ guidata(hObject,Data);
 
 Image=get(handles.uipanel_scroll,'UserData');
 RemoveFromImage(uint16(squeeze(Image.Captured(:,:,1))),Data.ButtonsXCoor,Data.ButtonsYCoor,Data.ButtonsRadius,Data.Flag,Data.Remove,hObject,handles)
-scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-scrollImage = imshow(get(handles.pushbutton_continue,'UserData'),'parent',scrollAxes);
-Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
+ 
+API=iptgetapi(Log.ManipulationAPI);
+API.replaceImage(get(handles.pushbutton_continue,'UserData'),'PreserveView',1);
 
 % --- Executes on button press in pushbutton_undoflag.
 function pushbutton_undoflag_Callback(hObject, ~, handles)
+
+global Log
 
 Data=get(handles.figure_manipulation,'UserData');
 [p1a,p1b]=ginputax(handles.uipanel_scroll,1);
@@ -564,9 +574,9 @@ guidata(hObject,Data);
 
 Image=get(handles.uipanel_scroll,'UserData');
 RemoveFromImage(uint16(squeeze(Image.Captured(:,:,1))),Data.ButtonsXCoor,Data.ButtonsYCoor,Data.ButtonsRadius,Data.Flag,Data.Remove,hObject,handles)
-scrollAxes = axes('parent',handles.uipanel_scroll,'position',[0 0 1 1],'Units','pixels');
-scrollImage = imshow(get(handles.pushbutton_continue,'UserData'),'parent',scrollAxes);
-Log.ManipulationAPI = imscrollpanel(handles.uipanel_scroll,scrollImage); 
+ 
+API=iptgetapi(Log.ManipulationAPI);
+API.replaceImage(get(handles.pushbutton_continue,'UserData'),'PreserveView',1);
 
 function [Data]=CompileData(Image,Data)
 
@@ -576,8 +586,6 @@ global Log
     Log.NumWells=Log.Rows*Log.Cols;
     Log.NumSamples=sum(~Data.Remove);
     WAIT=waitbar(0,'Extracting data from features...','Name','Data Extraction Percent Complete: ');
-    window=4*Log.ApproxBackgroundRadius+1;
-    [MaskX,MaskY]=meshgrid(1:window,1:window);
 
     %Masks are made such that button is always centered
     %Chamber is then inserted into mask relative to button coordinates
@@ -589,12 +597,13 @@ global Log
         if Data.Remove(W)==0
         Data.Index(W)=index;
         end
-        
-        %Generate unique button masks in case variable radius is used   
-        ButtonMask=uint16(sqrt((MaskX-(2*Data.ButtonsRadius(W)+1)).^2+(MaskY-(2*Data.ButtonsRadius(W)+1)).^2)<=Data.ButtonsRadius(W));
-        
-        %Generate masks for data extraction
-        if ~isempty(Image.Background)
+            
+        if sum(sum(Image.Background))~=0
+                             
+            window=4*Log.ApproxBackgroundRadius+1;
+            [MaskX,MaskY]=meshgrid(1:window,1:window);
+            
+            ButtonMask=uint16(sqrt((MaskX-(2*Data.ButtonsRadius(W)+1)).^2+(MaskY-(2*Data.ButtonsRadius(W)+1)).^2)<=Data.ButtonsRadius(W));
             ChamberBGMask =       uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)>=Log.ApproxBackgroundRadius*1.1 & sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius*1.3 );
             ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius &~ sqrt((MaskX-(2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius*1.2 );
             Data.ChamberAreaFG(W)=sum(sum(ChamberNoButtonMask));
@@ -615,16 +624,28 @@ global Log
             Data.SolubilizedTotalBG(W)=sum(DNAChamberBG(DNAChamberBG(:)>0))*Data.ChamberAreaFG(W)./Data.ChamberAreaBG(W);
             Data.SolubilizedFractionSaturatedFG(W)=length(find(DNAChamber==65535))./length(find(DNAChamber(:)>0));
             Data.SolubilizedFractionSaturatedBG(W)=length(find(DNAChamberBG==65535))./length(find(DNAChamberBG(:)>0));
+            
+            ImageSur=Image.Surface((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius));
 
+            
         else
-            ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxButtonRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxButtonRadius+1)).^2)>=Log.ApproxButtonRadius*1.2 &~ sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)<=Log.Radius*1.4 );
-        end            
+            window=4*Log.ApproxButtonRadius+1;
+            BTNRadius=round(Data.ButtonsRadius(W));
+            [MaskX,MaskY]=meshgrid(1:window,1:window);
+            
+            ButtonMask=uint16(sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)<=BTNRadius);
+            ChamberNoButtonMask = uint16(sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)>=BTNRadius*1.3 & sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)<=BTNRadius*1.9 );            
+           
+            ImageSur=Image.Surface((Data.ButtonsYCoor(W)-2*Log.ApproxButtonRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxButtonRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxButtonRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxButtonRadius));
+
+        end
+        
+        %Generate unique button masks in case variable radius is used          
         
         Data.ButtonsAreaFG(W)=sum(sum(ButtonMask));
         Data.ButtonsAreaBG(W)=sum(sum(ChamberNoButtonMask));
 
         %Collect data from surface immobilized molecules
-        ImageSur=Image.Surface((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius));
         SurfaceButton=double(ImageSur.*ButtonMask);
         SurfaceBG=double(ImageSur.*ChamberNoButtonMask);
 
@@ -641,8 +662,13 @@ global Log
 
         %Collect data from captured molecule images
         for FrameCap=1:Log.CapturedFrames
-
-            ImageCap=uint16(squeeze(Image.Captured((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius),FrameCap)));
+            
+            if sum(sum(Image.Background))~=0
+                ImageCap=uint16(squeeze(Image.Captured((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius),FrameCap)));
+            else
+                ImageCap=uint16(squeeze(Image.Captured((Data.ButtonsYCoor(W)-2*Log.ApproxButtonRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxButtonRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxButtonRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxButtonRadius),FrameCap)));
+            end
+            
             CapturedButton=double(ImageCap.*ButtonMask);
             CapturedBG=double(ImageCap.*ChamberNoButtonMask);
 

@@ -60,30 +60,32 @@ scrollAxes = axes('parent',handles.uipanel_image,'position',[0 0 1 1],'Units','p
 imshow(get(handles.uipanel_image,'UserData'),'parent',scrollAxes);
 
 % UIWAIT makes MITOMIAnalysis_GUI wait for user response (see UIRESUME)
-uiwait(handles.figure_manipulation);
+uiwait();
 
 % --- Outputs from this function are returned to the command line.
-function MITOMIAnalysis_ImageManipulation_OutputFcn(hObject, eventdata, handles) 
+function varargout=MITOMIAnalysis_ImageManipulation_OutputFcn(hObject, eventdata, handles) 
+varargout{1}=handles.output;
+delete(handles.figure_manipulation)
+
 
 function pushbutton_continue_Callback(hObject, eventdata, handles)
 
 global Log
 
-Log.ImageHolder=get(handles.figure_manipulation,'UserData');
 Log.Rows=str2num(get(handles.edit_row,'String'));
 Log.Cols=str2num(get(handles.edit_col,'String'));
 
 try
-    assert(Log.Rows>0 && rem(Log.Rows,1),'MITOMIAnalysis:ImageManipulation:rowValue','Row value declared was not an integer greater than 0');
-    assert(Log.Cols>0 && rem(Log.Cols,1),'MITOIMAnalysis:ImageManipulation:colValue','Column value declared was not an integer greater than 0');
+    assert(Log.Rows>=2,'MITOMIAnalysis:ImageManipulation:rowValue','Row value declared was not an integer greater than 2');
+    assert(Log.Cols>=2,'MITOIMAnalysis:ImageManipulation:colValue','Column value declared was not an integer greater than 2');
 catch
     delete(handles.figure_manipulation)
 end
 
 Log.ImageManipulation='Passed';
-
-delete(handles.figure_manipulation)
-
+handles.output=get(handles.figure_manipulation,'UserData');
+guidata(hObject,handles)
+uiresume()
 
 function pushbutton_cancel_Callback(hObject, eventdata, handles)
 delete(handles.figure_manipulation)

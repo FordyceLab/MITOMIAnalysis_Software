@@ -30,7 +30,7 @@ try
     AnalysisValidation();
     MITOMIAnalysis_FileManager();
     ImagePrep();
-    MITOMIAnalysis_ImageManipulation(Image.Captured(:,:,1),Image);
+    Image=MITOMIAnalysis_ImageManipulation(Image.Captured(:,:,1),Image);
     MITOMIAnalysis_SetCoordinates(Image.Surface);
     
     if ~isempty(Log.BackgroundFrame)
@@ -105,7 +105,6 @@ end
         %Internal GUI tracking variables
         Log.Vertex=0; 
         Log.CoorList=[0,0];
-        Log.ImageHolder=[];
         Log.CurrView=[];
         Log.MagView=[];
         Log.ManipulationAPI=[];
@@ -236,9 +235,12 @@ end
             WAIT=waitbar(0,'Loading images into MATLAB...','Name','Loading Images ','CreateCancelBtn','setappdata(gcbf,''canceling'',1);');
             setappdata(WAIT,'canceling',0);
             waitbar(0/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',0,Log.NumberFrames));
-
-            Image.Background=imread(Log.NameFrames{Log.BackgroundFrame});
+            try
+                Image.Background=imread(Log.NameFrames{Log.BackgroundFrame});
+            catch
+                Image.Background=[];
             bgFilled=~isempty(Image.Background);
+            end
             if bgFilled
                 dimBG=size(Image.Background);
                 Image.Background=imresize(Image.Background,7500/min(dimBG));
@@ -342,13 +344,15 @@ end
             CoorY=Log.CoorButtons(m,2);
             
             %Generate subimage and adjust contrast
-            screenSurface=uint16(Image.Surface((CoorY-2*Log.SubimageButtonRadius):(CoorY+2*Log.SubimageButtonRadius),(CoorX-2*Log.SubimageButtonRadius):(CoorX+2*Log.SubimageButtonRadius)));
-            screenSurfaceMod=imadjust(screenSurface,[],[],Log.ApproxGammaSurface);
-            imshow(mat2gray(screenSurfaceMod))
+            screenSurface=double(Image.Surface((CoorY-2*Log.SubimageButtonRadius):(CoorY+2*Log.SubimageButtonRadius),(CoorX-2*Log.SubimageButtonRadius):(CoorX+2*Log.SubimageButtonRadius)));
+            medianSS=median(median(screenSurface));
+            stdSS=std(std(screenSurface));
+            screenSurfaceMod=imadjust(mat2gray(screenSurface,[medianSS-stdSS*2 medianSS+stdSS*4]),[],[]);
+            imshow(screenSurfaceMod)
             
             %Apply Hough transform to find button
             warning('OFF','all') %suppress small radius warning
-            [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(Log.SubimageButtonRadius/2.5) round(Log.SubimageButtonRadius/1.25)],'ObjectPolarity','bright');
+            [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(Log.SubimageButtonRadius/2.5) round(Log.SubimageButtonRadius/1.5)],'ObjectPolarity','bright');
             warning('ON','all')
             
             if ~isempty(radii) %If autofind with hough transform detects something, process it
@@ -400,36 +404,37 @@ end
         
         %Set button radius length
         if ~strcmp(Log.RadiusType,'Fixed')
-            Data.ButtonRadius(:,1)=buttonRadius(:);
+            Data.ButtonsRadius(:,1)=buttonRadius(:);
         else
             Data.ButtonsRadius(:,1)=ones(length(Data.Index),1)*Log.ApproxButtonRadius;
         end
         
         %Display quality of autofind for buttons
         buttonMSGBOX=msgbox(['Buttons identified with automation: ' num2str(Log.ButtonTicker) ' out of ' num2str(length(Data.Index))],'Button Detection Complete');            
-        
-        solubilizedFGmask=zeros(Log.ApproxBackgroundRadius*2);
-        solubilizedBGmask=ones(Log.ApproxBackgroundRadius*2);
-        
-        %Generate 
-        for p=1:Log.ApproxBackgroundRadius*2
-            for q=1:Log.ApproxBackgroundRadius*2
-                if lt((p-(Log.ApproxBackgroundRadius*2+1)/2)^2+(q-(Log.ApproxBackgroundRadius*2+1)/2)^2,Log.ApproxBackgroundRadius^2)
-                    solubilizedFGmask(p,q)=1;
-                end
-            end
-        end
+        movegui(buttonMSGBOX,'north');
 
-        Log.SolubilizedFGmask=solubilizedFGmask;
-        Log.SolubilizedBGmask=solubilizedBGmask-solubilizedFGmask;
-        Log.BackgroundTicker=0;            
-
-        figChamberGrid=figure('menubar','none','numbertitle','off','toolbar','none','Name','Chamber Preview');
-        WAIT=waitbar(0,'Processing chamber positions...','Name','Chamber Positions');
-        Log.SurfaceFeatureFinding='Passed';
-        
         if ~isempty(Log.BackgroundFrame)
 
+            solubilizedFGmask=zeros(Log.ApproxBackgroundRadius*2);
+            solubilizedBGmask=ones(Log.ApproxBackgroundRadius*2);
+
+            %Generate 
+            for p=1:Log.ApproxBackgroundRadius*2
+                for q=1:Log.ApproxBackgroundRadius*2
+                    if lt((p-(Log.ApproxBackgroundRadius*2+1)/2)^2+(q-(Log.ApproxBackgroundRadius*2+1)/2)^2,Log.ApproxBackgroundRadius^2)
+                        solubilizedFGmask(p,q)=1;
+                    end
+                end
+            end
+
+            Log.SolubilizedFGmask=solubilizedFGmask;
+            Log.SolubilizedBGmask=solubilizedBGmask-solubilizedFGmask;
+            Log.BackgroundTicker=0;            
+
+            figChamberGrid=figure('menubar','none','numbertitle','off','toolbar','none','Name','Chamber Preview');
+            WAIT=waitbar(0,'Processing chamber positions...','Name','Chamber Positions');
+            Log.SurfaceFeatureFinding='Passed';
+        
             for n=1:length(Data.Index)
 
                 %Refresh coordinates with chamber positions
@@ -493,6 +498,7 @@ end
             Log.BackgroundFeatureFinding='Passed';
 
             backgroundMSGBOX=msgbox(['Background chambers identified with automation: ' num2str(Log.BackgroundTicker) ' out of ' num2str(length(Data.Index))],'Background Detection Complete');
+            movegui(backgroundMSGBOX,'north');
         end
         
         pause(3.0)
@@ -511,7 +517,6 @@ end
     function []=abortMITOMI()
 
     if ~strcmp(ME.identifier,'MITOMIAnalysis:MITOMIAnalysis_Initialization:usrCancel')
-        Log.ImageHolder='Images not saved';
         LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
         save(LOGFILENAME,'Log')
         disp('Log file saved.')
