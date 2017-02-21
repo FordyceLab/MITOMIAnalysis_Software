@@ -347,12 +347,12 @@ end
             screenSurface=double(Image.Surface((CoorY-2*Log.SubimageButtonRadius):(CoorY+2*Log.SubimageButtonRadius),(CoorX-2*Log.SubimageButtonRadius):(CoorX+2*Log.SubimageButtonRadius)));
             medianSS=median(median(screenSurface));
             stdSS=std(std(screenSurface));
-            screenSurfaceMod=imadjust(mat2gray(screenSurface,[medianSS-stdSS*2 medianSS+stdSS*4]),[],[]);
+            screenSurfaceMod=uint16(mat2gray(screenSurface,[medianSS-2*stdSS medianSS+stdSS*4])*65535);
             imshow(screenSurfaceMod)
             
             %Apply Hough transform to find button
             warning('OFF','all') %suppress small radius warning
-            [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(Log.SubimageButtonRadius/2.5) round(Log.SubimageButtonRadius/1.5)],'ObjectPolarity','bright');
+            [spotLocations,radii]=imfindcircles((screenSurfaceMod),[round(Log.SubimageButtonRadius/2) round(Log.SubimageButtonRadius/1.25)],'ObjectPolarity','bright');
             warning('ON','all')
             
             if ~isempty(radii) %If autofind with hough transform detects something, process it

@@ -589,107 +589,149 @@ global Log
 
     %Masks are made such that button is always centered
     %Chamber is then inserted into mask relative to button coordinates
-
-    for W=1:Log.NumWells
-        
-        index=index+double(~Data.Remove(W));
-        
-        if Data.Remove(W)==0
-        Data.Index(W)=index;
-        end
-            
-        if sum(sum(Image.Background))~=0
+    
+    if sum(sum(Image.Background))~=0 %If a background image was used
                              
-            window=4*Log.ApproxBackgroundRadius+1;
-            [MaskX,MaskY]=meshgrid(1:window,1:window);
+        window=4*Log.ApproxBackgroundRadius+1;
+        [MaskX,MaskY]=meshgrid(1:window,1:window);
+        
+        for i=1:Log.Numwells
+        
+            index=index+double(~Data.Remove(i));
             
-            ButtonMask=uint16(sqrt((MaskX-(2*Data.ButtonsRadius(W)+1)).^2+(MaskY-(2*Data.ButtonsRadius(W)+1)).^2)<=Data.ButtonsRadius(W));
-            ChamberBGMask =       uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)>=Log.ApproxBackgroundRadius*1.1 & sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius*1.3 );
-            ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(W)-Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(W)-Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius &~ sqrt((MaskX-(2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius*1.2 );
-            Data.ChamberAreaFG(W)=sum(sum(ChamberNoButtonMask));
-            Data.ChamberAreaBG(W)=sum(sum(ChamberBGMask));
+            if Data.Remove(i)==0
+               Data.Index(i)=index;
+            end
+            
+            %Generate unique button masks in case variable radius is used
+            ButtonMask=uint16(sqrt((MaskX-(2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(2*Log.ApproxBackgroundRadius+1)).^2)<=Data.ButtonsRadius(i));
+            ChamberBGMask =       uint16(sqrt((MaskX-(Data.ChamberXCoor(i)-Data.ButtonsXCoor(i)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(i)-Data.ButtonsYCoor(i)+2*Log.ApproxBackgroundRadius+1)).^2)>=Log.ApproxBackgroundRadius*1.1 & sqrt((MaskX-(Data.ChamberXCoor(i)-Data.ButtonsXCoor(i)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(i)-Data.ButtonsYCoor(i)+2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius*1.3 );
+            ChamberNoButtonMask = uint16(sqrt((MaskX-(Data.ChamberXCoor(i)-Data.ButtonsXCoor(i)+2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(Data.ChamberYCoor(i)-Data.ButtonsYCoor(i)+2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius &~ sqrt((MaskX-(2*Log.ApproxBackgroundRadius+1)).^2+(MaskY-(2*Log.ApproxBackgroundRadius+1)).^2)<=Log.ApproxBackgroundRadius*1.2 );
+            Data.ChamberAreaFG(i)=sum(sum(ChamberNoButtonMask));
+            Data.ChamberAreaBG(i)=sum(sum(ChamberBGMask));    
+            Data.ButtonsAreaFG(i)=sum(sum(ButtonMask));
+            Data.ButtonsAreaBG(i)=sum(sum(ChamberNoButtonMask));
             
             %Collect data from solubilized/background chambers
-            ImageSol=Image.Background((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius));
+            ImageSol=Image.Background((Data.ButtonsYCoor(i)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(i)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(i)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(i)+2*Log.ApproxBackgroundRadius));
             DNAChamber = double(ImageSol.*ChamberNoButtonMask);
             DNAChamberBG = double(ImageSol.*ChamberBGMask);
 
-            Data.SolubilizedMedianFG(W)=median(DNAChamber(DNAChamber(:)>0));
-            Data.SolubilizedMeanFG(W)=mean(DNAChamber(DNAChamber(:)>0));
-            Data.SolubilizedSTDFG(W)=std(DNAChamber(DNAChamber(:)>0));
-            Data.SolubilizedTotalFG(W)=sum(DNAChamber(DNAChamber(:)>0));
-            Data.SolubilizedMedianBG(W)=median(DNAChamberBG(DNAChamberBG(:)>0));
-            Data.SolubilizedMeanBG(W)=mean(DNAChamberBG(DNAChamberBG(:)>0));
-            Data.SolubilizedSTDBG(W)=std(DNAChamberBG(DNAChamberBG(:)>0));
-            Data.SolubilizedTotalBG(W)=sum(DNAChamberBG(DNAChamberBG(:)>0))*Data.ChamberAreaFG(W)./Data.ChamberAreaBG(W);
-            Data.SolubilizedFractionSaturatedFG(W)=length(find(DNAChamber==65535))./length(find(DNAChamber(:)>0));
-            Data.SolubilizedFractionSaturatedBG(W)=length(find(DNAChamberBG==65535))./length(find(DNAChamberBG(:)>0));
-            
-            ImageSur=Image.Surface((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius));
+            Data.SolubilizedMedianFG(i)=median(DNAChamber(DNAChamber(:)>0));
+            Data.SolubilizedMeanFG(i)=mean(DNAChamber(DNAChamber(:)>0));
+            Data.SolubilizedSTDFG(i)=std(DNAChamber(DNAChamber(:)>0));
+            Data.SolubilizedTotalFG(i)=sum(DNAChamber(DNAChamber(:)>0));
+            Data.SolubilizedMedianBG(i)=median(DNAChamberBG(DNAChamberBG(:)>0));
+            Data.SolubilizedMeanBG(i)=mean(DNAChamberBG(DNAChamberBG(:)>0));
+            Data.SolubilizedSTDBG(i)=std(DNAChamberBG(DNAChamberBG(:)>0));
+            Data.SolubilizedTotalBG(i)=sum(DNAChamberBG(DNAChamberBG(:)>0))*Data.ChamberAreaFG(i)./Data.ChamberAreaBG(i);
+            Data.SolubilizedFractionSaturatedFG(i)=length(find(DNAChamber==65535))./length(find(DNAChamber(:)>0));
+            Data.SolubilizedFractionSaturatedBG(i)=length(find(DNAChamberBG==65535))./length(find(DNAChamberBG(:)>0));           
 
-            
-        else
-            window=4*Log.ApproxButtonRadius+1;
-            BTNRadius=round(Data.ButtonsRadius(W));
-            [MaskX,MaskY]=meshgrid(1:window,1:window);
-            
-            ButtonMask=uint16(sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)<=BTNRadius);
-            ChamberNoButtonMask = uint16(sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)>=BTNRadius*1.3 & sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)<=BTNRadius*1.9 );            
-           
-            ImageSur=Image.Surface((Data.ButtonsYCoor(W)-2*Log.ApproxButtonRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxButtonRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxButtonRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxButtonRadius));
+            %Collect data from surface immobilized molecule
+            ImageSur=Image.Surface((Data.ButtonsYCoor(i)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(i)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(i)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(i)+2*Log.ApproxBackgroundRadius));        
+            SurfaceButton=double(ImageSur.*ButtonMask);
+            SurfaceBG=double(ImageSur.*ChamberNoButtonMask);
 
-        end
-        
-        %Generate unique button masks in case variable radius is used          
-        
-        Data.ButtonsAreaFG(W)=sum(sum(ButtonMask));
-        Data.ButtonsAreaBG(W)=sum(sum(ChamberNoButtonMask));
+            Data.SurfaceMedianFG(i)=median(SurfaceButton(SurfaceButton(:)>0));
+            Data.SurfaceAverageFG(i)=mean(SurfaceButton(SurfaceButton(:)>0));
+            Data.SurfaceSTDFG(i)=std(SurfaceButton(SurfaceButton(:)>0));
+            Data.SurfaceTotalFG(i)=sum(SurfaceButton(SurfaceButton(:)>0));
+            Data.SurfaceMedianBG(i)=median(SurfaceBG(SurfaceBG(:)>0));
+            Data.SurfaceAverageBG(i)=mean(SurfaceBG(SurfaceBG(:)>0));
+            Data.SurfaceSTDBG(i)=std(SurfaceBG(SurfaceBG(:)>0));
+            Data.SurfaceTotalBG(i)=sum(SurfaceBG(SurfaceBG(:)>0))*Data.ButtonsAreaFG(i)./Data.ButtonsAreaBG(i);
+            Data.SurfaceFractionSaturatedFG(i)=length(find(SurfaceButton==65535))./length(find(SurfaceButton(:)>0));
+            Data.SurfaceFractionSaturatedBG(i)=length(find(SurfaceBG==65535))./length(find(SurfaceBG(:)>0));
 
-        %Collect data from surface immobilized molecules
-        SurfaceButton=double(ImageSur.*ButtonMask);
-        SurfaceBG=double(ImageSur.*ChamberNoButtonMask);
+            %Collect data from captured molecule images
+            for FrameCap=1:Log.CapturedFrames
 
-        Data.SurfaceMedianFG(W)=median(SurfaceButton(SurfaceButton(:)>0));
-        Data.SurfaceAverageFG(W)=mean(SurfaceButton(SurfaceButton(:)>0));
-        Data.SurfaceSTDFG(W)=std(SurfaceButton(SurfaceButton(:)>0));
-        Data.SurfaceTotalFG(W)=sum(SurfaceButton(SurfaceButton(:)>0));
-        Data.SurfaceMedianBG(W)=median(SurfaceBG(SurfaceBG(:)>0));
-        Data.SurfaceAverageBG(W)=mean(SurfaceBG(SurfaceBG(:)>0));
-        Data.SurfaceSTDBG(W)=std(SurfaceBG(SurfaceBG(:)>0));
-        Data.SurfaceTotalBG(W)=sum(SurfaceBG(SurfaceBG(:)>0))*Data.ButtonsAreaFG(W)./Data.ButtonsAreaBG(W);
-        Data.SurfaceFractionSaturatedFG(W)=length(find(SurfaceButton==65535))./length(find(SurfaceButton(:)>0));
-        Data.SurfaceFractionSaturatedBG(W)=length(find(SurfaceBG==65535))./length(find(SurfaceBG(:)>0));
+                ImageCap=uint16(squeeze(Image.Captured((Data.ButtonsYCoor(i)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(i)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(i)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(i)+2*Log.ApproxBackgroundRadius),FrameCap)));
+                CapturedButton=double(ImageCap.*ButtonMask);
+                CapturedBG=double(ImageCap.*ChamberNoButtonMask);
 
-        %Collect data from captured molecule images
-        for FrameCap=1:Log.CapturedFrames
-            
-            if sum(sum(Image.Background))~=0
-                ImageCap=uint16(squeeze(Image.Captured((Data.ButtonsYCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxBackgroundRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxBackgroundRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxBackgroundRadius),FrameCap)));
-            else
-                ImageCap=uint16(squeeze(Image.Captured((Data.ButtonsYCoor(W)-2*Log.ApproxButtonRadius):(Data.ButtonsYCoor(W)+2*Log.ApproxButtonRadius),(Data.ButtonsXCoor(W)-2*Log.ApproxButtonRadius):(Data.ButtonsXCoor(W)+2*Log.ApproxButtonRadius),FrameCap)));
+                Data.CapturedMedianFG(i,FrameCap)=median(CapturedButton(CapturedButton(:)>0));
+                Data.CapturedAverageFG(i,FrameCap)=mean(CapturedButton(CapturedButton(:)>0));
+                Data.CapturedSTDFG(i,FrameCap)=std(CapturedButton(CapturedButton(:)>0));
+                Data.CapturedTotalFG(i,FrameCap)=sum(CapturedButton(CapturedButton(:)>0));
+                Data.CapturedMedianBG(i,FrameCap)=median(CapturedBG(CapturedBG(:)>0));
+                Data.CapturedAverageBG(i,FrameCap)=mean(CapturedBG(CapturedBG(:)>0));
+                Data.CapturedSTDBG(i,FrameCap)=std(CapturedBG(CapturedBG(:)>0));
+                Data.CapturedTotalBG(i,FrameCap)=sum(CapturedBG(CapturedBG(:)>0))*Data.ButtonsAreaFG(i)./Data.ButtonsAreaBG(i); 
+                Data.CapturedFractionSaturatedFG(i,FrameCap)=length(find(CapturedButton==65535))./length(find(CapturedButton(:)>0));
+                Data.CapturedFractionSaturatedBG(i,FrameCap)=length(find(CapturedBG==65535))./length(find(CapturedBG(:)>0));
+
             end
-            
-            CapturedButton=double(ImageCap.*ButtonMask);
-            CapturedBG=double(ImageCap.*ChamberNoButtonMask);
 
-            Data.CapturedMedianFG(W,FrameCap)=median(CapturedButton(CapturedButton(:)>0));
-            Data.CapturedAverageFG(W,FrameCap)=mean(CapturedButton(CapturedButton(:)>0));
-            Data.CapturedSTDFG(W,FrameCap)=std(CapturedButton(CapturedButton(:)>0));
-            Data.CapturedTotalFG(W,FrameCap)=sum(CapturedButton(CapturedButton(:)>0));
-            Data.CapturedMedianBG(W,FrameCap)=median(CapturedBG(CapturedBG(:)>0));
-            Data.CapturedAverageBG(W,FrameCap)=mean(CapturedBG(CapturedBG(:)>0));
-            Data.CapturedSTDBG(W,FrameCap)=std(CapturedBG(CapturedBG(:)>0));
-            Data.CapturedTotalBG(W,FrameCap)=sum(CapturedBG(CapturedBG(:)>0))*Data.ButtonsAreaFG(W)./Data.ButtonsAreaBG(W); 
-            Data.CapturedFractionSaturatedFG(W,FrameCap)=length(find(CapturedButton==65535))./length(find(CapturedButton(:)>0));
-            Data.CapturedFractionSaturatedBG(W,FrameCap)=length(find(CapturedBG==65535))./length(find(CapturedBG(:)>0));
+            waitbar(i/Log.NumWells,WAIT,sprintf('%6.3f',i/Log.NumWells*100));
 
         end
 
-        waitbar(W/Log.NumWells,WAIT,sprintf('%6.3f',W/Log.NumWells*100));
+        delete(WAIT)
+        
+    else %a background image was not used
+        
+        window=4*Log.ApproxButtonRadius+1;
+        [MaskX,MaskY]=meshgrid(1:window,1:window);
+        
+        for j=1:Log.NumWells
+            
+            index=index+double(~Data.Remove(j));
+            
+            if Data.Remove(j)==0
+               Data.Index(j)=index;
+            end
 
-    end
+            %Generate unique button masks in case variable radius is used          
+            ButtonMask=uint16(sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)<=Data.ButtonsRadius(j));
+            ChamberNoButtonMask = uint16(sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)>=Data.ButtonsRadius(j)*1.3 & sqrt((MaskX-(2*Log.ApproxButtonRadius+1)).^2+(MaskY-(2*Log.ApproxButtonRadius+1)).^2)<=Data.ButtonsRadius(j)*1.9 );            
+            Data.ButtonsAreaFG(j)=sum(sum(ButtonMask));
+            Data.ButtonsAreaBG(j)=sum(sum(ChamberNoButtonMask));
 
-    delete(WAIT)
+            %Collect data from surface immobilized molecules            
+            ImageSur=Image.Surface((Data.ButtonsYCoor(j)-2*Log.ApproxButtonRadius):(Data.ButtonsYCoor(j)+2*Log.ApproxButtonRadius),(Data.ButtonsXCoor(j)-2*Log.ApproxButtonRadius):(Data.ButtonsXCoor(j)+2*Log.ApproxButtonRadius));
+            SurfaceButton=double(ImageSur.*ButtonMask);
+            SurfaceBG=double(ImageSur.*ChamberNoButtonMask);
+
+            Data.SurfaceMedianFG(j)=median(SurfaceButton(SurfaceButton(:)>0));
+            Data.SurfaceAverageFG(j)=mean(SurfaceButton(SurfaceButton(:)>0));
+            Data.SurfaceSTDFG(j)=std(SurfaceButton(SurfaceButton(:)>0));
+            Data.SurfaceTotalFG(j)=sum(SurfaceButton(SurfaceButton(:)>0));
+            Data.SurfaceMedianBG(j)=median(SurfaceBG(SurfaceBG(:)>0));
+            Data.SurfaceAverageBG(j)=mean(SurfaceBG(SurfaceBG(:)>0));
+            Data.SurfaceSTDBG(j)=std(SurfaceBG(SurfaceBG(:)>0));
+            Data.SurfaceTotalBG(j)=sum(SurfaceBG(SurfaceBG(:)>0))*Data.ButtonsAreaFG(j)./Data.ButtonsAreaBG(j);
+            Data.SurfaceFractionSaturatedFG(j)=length(find(SurfaceButton==65535))./length(find(SurfaceButton(:)>0));
+            Data.SurfaceFractionSaturatedBG(j)=length(find(SurfaceBG==65535))./length(find(SurfaceBG(:)>0));
+
+            %Collect data from captured molecule images
+            for FrameCap=1:Log.CapturedFrames
+
+                ImageCap=uint16(squeeze(Image.Captured((Data.ButtonsYCoor(j)-2*Log.ApproxButtonRadius):(Data.ButtonsYCoor(j)+2*Log.ApproxButtonRadius),(Data.ButtonsXCoor(j)-2*Log.ApproxButtonRadius):(Data.ButtonsXCoor(j)+2*Log.ApproxButtonRadius),FrameCap)));
+                CapturedButton=double(ImageCap.*ButtonMask);
+                CapturedBG=double(ImageCap.*ChamberNoButtonMask);
+
+                Data.CapturedMedianFG(j,FrameCap)=median(CapturedButton(CapturedButton(:)>0));
+                Data.CapturedAverageFG(j,FrameCap)=mean(CapturedButton(CapturedButton(:)>0));
+                Data.CapturedSTDFG(j,FrameCap)=std(CapturedButton(CapturedButton(:)>0));
+                Data.CapturedTotalFG(j,FrameCap)=sum(CapturedButton(CapturedButton(:)>0));
+                Data.CapturedMedianBG(j,FrameCap)=median(CapturedBG(CapturedBG(:)>0));
+                Data.CapturedAverageBG(j,FrameCap)=mean(CapturedBG(CapturedBG(:)>0));
+                Data.CapturedSTDBG(j,FrameCap)=std(CapturedBG(CapturedBG(:)>0));
+                Data.CapturedTotalBG(j,FrameCap)=sum(CapturedBG(CapturedBG(:)>0))*Data.ButtonsAreaFG(j)./Data.ButtonsAreaBG(j); 
+                Data.CapturedFractionSaturatedFG(j,FrameCap)=length(find(CapturedButton==65535))./length(find(CapturedButton(:)>0));
+                Data.CapturedFractionSaturatedBG(j,FrameCap)=length(find(CapturedBG==65535))./length(find(CapturedBG(:)>0));
+
+            end
+
+            waitbar(j/Log.NumWells,WAIT,sprintf('%6.3f',j/Log.NumWells*100));
+
+        end
+
+        delete(WAIT)
+
+    end         
 
 function []=fprintMITOMI(Image,Data)
 
