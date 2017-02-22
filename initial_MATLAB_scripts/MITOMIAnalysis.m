@@ -237,15 +237,14 @@ end
             waitbar(0/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',0,Log.NumberFrames));
             try
                 Image.Background=imread(Log.NameFrames{Log.BackgroundFrame});
+                dimBG=size(Image.Background); 
+                Image.Background=imresize(Image.Background,7500/min(dimBG));
+                bgFilled=1;
             catch
                 Image.Background=[];
-            bgFilled=~isempty(Image.Background);
+                bgFilled=~isempty(Image.Background);
             end
-            if bgFilled
-                dimBG=size(Image.Background);
-                Image.Background=imresize(Image.Background,7500/min(dimBG));
-            end
-            
+
             waitbar(bgFilled/Log.NumberFrames,WAIT,sprintf('Fraction Complete: %i / %i',bgFilled,Log.NumberFrames));
 
             Image.Surface=imread(Log.NameFrames{~isempty(Log.BackgroundFrame) + Log.SurfaceFrame});

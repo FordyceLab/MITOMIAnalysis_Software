@@ -595,7 +595,7 @@ global Log
         window=4*Log.ApproxBackgroundRadius+1;
         [MaskX,MaskY]=meshgrid(1:window,1:window);
         
-        for i=1:Log.Numwells
+        for i=1:Log.NumWells
         
             index=index+double(~Data.Remove(i));
             
