@@ -15,7 +15,7 @@ function MITOMI_Function=MITOMIAnalysis()
 % 4. Data extraction from features
 
 %% MAIN PROGRAM
-
+tic
 %Core Data Structures
 global Log
 Log=[];
@@ -213,7 +213,6 @@ end
         catch ME
 
             Log.Error=getReport(ME);
-            abortMITOMI();
             throw(ME)
 
         end
@@ -285,7 +284,6 @@ end
         catch ME
 
             Log.Error=getReport(ME);
-            abortMITOMI();
             throw(ME)
 
         end
@@ -332,7 +330,7 @@ end
         figButtonGrid=figure('menubar','none','numbertitle','off','toolbar','none','Name','Button Preview');
         WAIT=waitbar(0,'Processing button positions...','Name','Finding Buttons');
         
-        for m=1:length(Data.Index); %For each point in the array
+        for m=1:length(Data.Index) %For each point in the array
             
             %Fill in spot identity
             Data.ColIndex(m)=ceil(m/Log.Rows);
@@ -514,10 +512,9 @@ end
 
 %% ABORT MITOMI
     function []=abortMITOMI()
-
     if ~strcmp(ME.identifier,'MITOMIAnalysis:MITOMIAnalysis_Initialization:usrCancel')
-        LOGFILENAME=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
-        save(LOGFILENAME,'Log')
+        Log.FileName=['LOG_MITOMIAnalysis_' datestr(now,30) '.mat'];
+        save(Log.FileName,'Log')
         disp('Log file saved.')
         clear global
         close()
@@ -526,11 +523,14 @@ end
         disp('Congrats - MITOMI Analysis is complete')
     end
 end
-
+disp(toc)
 end
 
 %% NOTEPAD
 %{
+v2.3 reconfigures units for GUIs to be compatible with Windows and Mac OS.
+Improved error reporting.
+
 v2.2 restricts the search area of the solubility chamber by 1/8th of the
 length of each direction away from the center point. It also includes
 columns for 

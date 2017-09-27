@@ -22,7 +22,7 @@ function varargout = MITOMIAnalysis_UserEdit(varargin)
 
 % Edit the above text to modify the response to help MITOMIAnalysis_GUI
 
-% Last Modified by GUIDE v2.5 10-Feb-2017 17:36:52
+% Last Modified by GUIDE v2.5 20-Sep-2017 15:42:42
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -788,4 +788,3 @@ end
         close(saveMSGBOX);
     end
     
-
